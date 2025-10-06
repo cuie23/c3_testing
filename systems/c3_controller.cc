@@ -42,6 +42,9 @@ C3Controller::C3Controller(
   dt_ = controller_options_.lcs_factory_options.dt;
   solve_time_filter_constant_ = controller_options_.solve_time_filter_alpha;
 
+  std::cout << "n_q: " << n_q_ << " n_v_: " << n_v_ << std::endl;
+  std::cout << "n_x: " << n_x_ << " n_u_: " << n_u_ << std::endl;
+
   // Initialize state prediction joints
   for (auto prediction_joint : controller_options_.state_prediction_joints) {
     const auto joint = &plant.GetJointByName(prediction_joint.name);
@@ -64,6 +67,8 @@ C3Controller::C3Controller(
   // Determine the size of lambda based on the contact model
   n_lambda_ = multibody::LCSFactory::GetNumContactVariables(
       controller_options_.lcs_factory_options);
+
+  std::cout << "n_lambda: " << n_lambda_ << std::endl;
 
   // Placeholder vector for initialization
   VectorXd zeros = VectorXd::Zero(n_x_ + n_lambda_ + n_u_);
