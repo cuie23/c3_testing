@@ -1,0 +1,97 @@
+<?xml version="1.0"?>
+<sdf version="1.7">
+  <world name="plate_world">
+
+    <model name="plate_model">
+
+      <!-- Plate -->
+      <link name="plate">
+        <pose>0 0 0 0 0 0</pose>
+        <inertial><mass>0.5</mass></inertial>
+        <visual name="plate_visual">
+          <geometry>
+            <cylinder>
+              <radius>0.5</radius>
+              <length> 0.02 </length>
+            </cylinder>
+          </geometry>
+          <material><diffuse>0.1 0.1 0.1 1</diffuse></material>
+        </visual>
+        <collision name="plate_collision">
+          <geometry>
+            <cylinder>
+              <radius>0.5</radius>
+              <length> 0.02 </length>
+            </cylinder>
+          </geometry>
+          <surface> 
+            <contact> 
+              <ode/> 
+            </contact>
+            <friction>
+              <ode>
+                <mu> 0.5 </mu>
+                <mu2> 0.5 </mu2>
+              </ode>
+            </friction>
+            <bounce>
+              <restitution_coefficient> 0.0 </restitution_coefficient>
+            </bounce>
+          </surface>
+        </collision>
+      </link>
+
+
+
+      <joint name="plate_x" type="prismatic">
+        <parent>world</parent>
+        <child>link_x</child>
+        <axis><xyz>1 0 0</xyz></axis>
+      </joint>
+
+      <link name="link_x"/>
+
+      <joint name="plate_y" type="prismatic">
+        <parent>link_x</parent>
+        <child>link_y</child>
+        <axis><xyz>0 1 0</xyz></axis>
+      </joint>
+
+      <link name="link_y"/>
+
+      <joint name="plate_z" type="prismatic">
+        <parent>link_y</parent>
+        <child>plate</child>
+        <axis><xyz>0 0 1</xyz></axis>
+      </joint>
+
+      <link name="link_roll"/>
+      <joint name="plate_roll" type="revolute">
+        <parent>link_roll</parent>
+        <child>plate</child>
+        <axis>
+          <xyz>1 0 0</xyz>
+          <limit>
+            <lower>-0.5</lower>
+            <upper>0.5</upper>
+          </limit>
+          </axis>
+      </joint>
+
+      <link name="link_pitch"/>
+      <joint name="plate_pitch" type="prismatic">
+        <parent>link_pitch</parent>
+        <child>plate</child>
+        <axis>
+          <xyz>0 1 0</xyz>
+          <limit>
+            <lower>-0.5</lower>
+            <upper>0.5</upper>
+          </limit>
+        </axis>
+      </joint>
+
+    </model>
+
+  </world>
+</sdf>

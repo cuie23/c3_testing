@@ -42,6 +42,8 @@ using c3::systems::LCSFactorySystem;
 using c3::systems::LCSSimulator;
 
 using drake::SortedPair;
+using drake::math::RigidTransformd;
+using drake::math::RotationMatrixd;
 using drake::geometry::GeometryId;
 using drake::geometry::SceneGraph;
 using drake::multibody::AddMultibodyPlantSceneGraph;
@@ -435,6 +437,223 @@ int RunPivotingTest() {
   return 0;
 }
 
+int RunPlateTest() {
+  // Build the plant and scene graph for the pivoting system.
+  DiagramBuilder<double> plant_builder;
+  auto [plant_for_lcs, scene_graph_for_lcs] =
+      AddMultibodyPlantSceneGraph(&plant_builder, 0.0);
+  Parser parser_for_lcs(&plant_for_lcs, &scene_graph_for_lcs);
+
+  const std::string plate_file_lcs = "examples/resources/plate/plate.sdf";
+	const std::string cube_file_lcs = "examples/resources/plate/cube.sdf";
+
+  parser_for_lcs.AddModels(plate_file_lcs);
+  parser_for_lcs.AddModels(cube_file_lcs);
+
+  plant_for_lcs.Finalize();
+
+  // Build the plant diagram.
+  auto plant_diagram = plant_builder.Build();
+
+  // Retrieve collision geometries for relevant bodies.
+  drake::geometry::GeometryId plate_collision_geom =
+      plant_for_lcs.GetCollisionGeometriesForBody(
+          plant_for_lcs.GetBodyByName("plate"))[0];
+	std::vector<drake::geometry::GeometryId> cube_collision_geoms;
+  for (int i = 1; i <= 8; i++) {
+		cube_collision_geoms.push_back(
+			plant_for_lcs.GetCollisionGeometriesForBody(
+          plant_for_lcs.GetBodyByName("cube"))[i]);
+	}
+
+  // Define contact pairs for the LCS system.
+  std::vector<SortedPair<GeometryId>> contact_pairs;
+
+	for (GeometryId geom_id : cube_collision_geoms) {
+		contact_pairs.emplace_back(plate_collision_geom, geom_id);
+	}
+
+  // Build the main diagram.
+  DiagramBuilder<double> builder;
+  auto [plant, scene_graph] = AddMultibodyPlantSceneGraph(&builder, 0.01);
+  Parser parser(&plant, &scene_graph);
+  const std::string plate_file = "examples/resources/plate/plate.sdf";
+	const std::string cube_file = "examples/resources/plate/cube.sdf";
+
+  parser.AddModels(plate_file);
+  parser.AddModels(cube_file);
+
+  plant.Finalize();
+
+  // Load controller options and cost matrices.
+  C3ControllerOptions options = drake::yaml::LoadYamlFile<C3ControllerOptions>(
+      "examples/resources/plate/c3_controller_plate_options.yaml");
+  C3::CostMatrices cost = C3::CreateCostMatricesFromC3Options(
+      options.c3_options, options.lcs_factory_options.N);
+
+  // Create contexts for the plant and LCS factory system.
+  std::unique_ptr<drake::systems::Context<double>> plant_diagram_context =
+      plant_diagram->CreateDefaultContext();
+  auto plant_autodiff =
+      drake::systems::System<double>::ToAutoDiffXd(plant_for_lcs);
+  auto& plant_for_lcs_context = plant_diagram->GetMutableSubsystemContext(
+      plant_for_lcs, plant_diagram_context.get());
+  auto plant_context_autodiff = plant_autodiff->CreateDefaultContext();
+
+  // Add the LCS factory system.
+  auto lcs_factory_system = builder.AddSystem<LCSFactorySystem>(
+      plant_for_lcs, plant_for_lcs_context, *plant_autodiff,
+      *plant_context_autodiff, contact_pairs, options.lcs_factory_options);
+
+	std::cout << "Before add C3 controller" << std::endl;
+
+  // Add the C3 controller.
+  auto c3_controller =
+      builder.AddSystem<C3Controller>(plant_for_lcs, cost, options);
+  c3_controller->set_name("c3_controller");
+
+	std::cout << "After add C3 controller" << std::endl;
+
+  // Add linear constraints to the controller.
+  // Eigen::MatrixXd A = Eigen::MatrixXd::Zero(26, 26);
+  // A(4, 4) = 1;
+  // A(5, 5) = 1;
+  // A(6, 6) = 1;
+	// A(11, 11) = 1;
+  // A(12, 12) = 1;
+  // A(13, 13) = 1;
+  // Eigen::VectorXd lower_bound(26);
+  // Eigen::VectorXd upper_bound(26);
+  // lower_bound << 0, 0, 0, 0, -1, -1, -1, 0, 0, 0, 0, -1, -1, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
+  // upper_bound << 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
+  // c3_controller->AddLinearConstraint(A, lower_bound, upper_bound,
+  //                                    ConstraintVariable::STATE);
+
+  // Add a constant vector source for the desired state = ee rot, ee pos, cube rot, cube pos
+  Eigen::VectorXd xd(23);
+  //xd << 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
+	xd << 0, 0, 0, 0, 0, 0, 1, 0, 0, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0;
+
+  std::vector<double> x_des = *options.x_des;
+  xd = Eigen::Map<Eigen::VectorXd>(x_des.data(), x_des.size()); 
+
+	std::cout << "xd: " << xd.transpose() << std::endl;
+
+  auto xdes =
+      builder.AddSystem<drake::systems::ConstantVectorSource<double>>(xd);
+
+  // Add a vector-to-timestamped-vector converter.
+  auto vector_to_timestamped_vector =
+      builder.AddSystem<Vector2TimestampedVector>(23);
+  builder.Connect(plant.get_state_output_port(),
+                  vector_to_timestamped_vector->get_input_port_state());
+
+  // Connect controller inputs.
+  builder.Connect(
+      vector_to_timestamped_vector->get_output_port_timestamped_state(),
+      c3_controller->get_input_port_lcs_state());
+  builder.Connect(lcs_factory_system->get_output_port_lcs(),
+                  c3_controller->get_input_port_lcs());
+  builder.Connect(xdes->get_output_port(),
+                  c3_controller->get_input_port_target());
+
+  // Add and connect the C3 solution input system.
+  auto c3_input = builder.AddSystem<C3Solution2Input>(5);
+  builder.Connect(c3_controller->get_output_port_c3_solution(),
+                  c3_input->get_input_port_c3_solution());
+  builder.Connect(c3_input->get_output_port_c3_input(),
+                  plant.get_actuation_input_port());
+
+  // Add a ZeroOrderHold system for state updates.
+  auto input_zero_order_hold =
+      builder.AddSystem<drake::systems::ZeroOrderHold<double>>(
+          1 / options.publish_frequency, 5);
+  builder.Connect(c3_input->get_output_port_c3_input(),
+                  input_zero_order_hold->get_input_port());
+  builder.Connect(
+      vector_to_timestamped_vector->get_output_port_timestamped_state(),
+      lcs_factory_system->get_input_port_lcs_state());
+  builder.Connect(input_zero_order_hold->get_output_port(),
+                  lcs_factory_system->get_input_port_lcs_input());
+
+
+
+	Eigen::Vector4d q_vec = xd.segment(5, 4);
+	Eigen::Quaterniond q(q_vec(0), q_vec(1), q_vec(2), q_vec(3));
+	q.normalize();
+  RotationMatrixd R_target(q);
+	RigidTransformd X_WF(R_target, xd.segment(9, 3));
+
+  // Set up Meshcat visualizer.
+  auto meshcat = std::make_shared<drake::geometry::Meshcat>();
+  drake::geometry::MeshcatVisualizerParams params;
+  drake::geometry::MeshcatVisualizer<double>::AddToBuilder(
+      &builder, scene_graph, meshcat, std::move(params));
+  drake::multibody::meshcat::ContactVisualizer<double>::AddToBuilder(
+      &builder, plant, meshcat,
+      drake::multibody::meshcat::ContactVisualizerParams());
+
+	const double axis_len = 0.2;
+	const double radius = 0.01;
+
+	meshcat->SetObject("target_pose/x_axis", drake::geometry::Cylinder(radius, axis_len), drake::geometry::Rgba(1, 0, 0, 1));
+	RigidTransformd X_FX(
+		RotationMatrixd::MakeYRotation(-M_PI / 2.0),
+		Eigen::Vector3d(axis_len / 2.0, 0, 0));
+	meshcat->SetTransform("target_pose/x_axis", X_WF * X_FX);
+
+	meshcat->SetObject("target_pose/y_axis", drake::geometry::Cylinder(radius, axis_len), drake::geometry::Rgba(0, 1, 0, 1));
+	RigidTransformd X_FY(
+		RotationMatrixd::MakeXRotation(M_PI / 2.0),
+		Eigen::Vector3d(0, axis_len / 2.0, 0));
+	meshcat->SetTransform("target_pose/y_axis", X_WF * X_FY);
+
+	meshcat->SetObject("target_pose/z_axis", drake::geometry::Cylinder(radius, axis_len), drake::geometry::Rgba(0, 0, 1, 1));
+	RigidTransformd X_FZ(
+		RotationMatrixd::Identity(),
+		Eigen::Vector3d(0, 0, axis_len / 2.0));
+	meshcat->SetTransform("target_pose/z_axis", X_WF * X_FZ);
+
+
+  // Build the diagram.
+  auto diagram = builder.Build();
+
+  if (!FLAGS_diagram_path.empty())
+    c3::systems::common::DrawAndSaveDiagramGraph(*diagram, FLAGS_diagram_path);
+
+  // Create a default context for the diagram.
+  auto diagram_context = diagram->CreateDefaultContext();
+
+  // Set the initial state of the system.
+  Eigen::VectorXd x0(23);
+	x0 << 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
+
+  // x0 << 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
+  std::vector<double> x_init = *options.x_init;
+  x0 = Eigen::Map<Eigen::VectorXd>(x_init.data(), x_init.size());
+	std::cout << "x0: " << x0.transpose() << std::endl;
+
+	// for (const auto& pname : plant.GetPositionNames()) {
+	// 	std::cout << pname << std::endl;
+	// }
+	// for (const auto& vname : plant.GetVelocityNames()) {
+	// 	std::cout << vname << std::endl;
+	// }
+
+	auto& plant_context =
+      diagram->GetMutableSubsystemContext(plant, diagram_context.get());
+  plant.SetPositionsAndVelocities(&plant_context, x0);
+
+  // Create and configure the simulator.
+  drake::systems::Simulator<double> simulator(*diagram,
+                                              std::move(diagram_context));
+  simulator.set_target_realtime_rate(1);  // Run simulation at real-time speed.
+  simulator.Initialize();
+  simulator.AdvanceTo(120.0);  // Run simulation for 10 seconds.
+
+  return 0;
+}
+
 int main(int argc, char* argv[]) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   if (FLAGS_experiment_type == "cartpole_softwalls") {
@@ -443,6 +662,9 @@ int main(int argc, char* argv[]) {
   } else if (FLAGS_experiment_type == "cube_pivoting") {
     std::cout << "Running Cube Pivoting Test..." << std::endl;
     return RunPivotingTest();
+  } else if (FLAGS_experiment_type == "plate") {
+    std::cout << "Running Plate Test..." << std::endl;
+    return RunPlateTest();
   } else {
     std::cerr
         << "Unknown experiment type: " << FLAGS_experiment_type

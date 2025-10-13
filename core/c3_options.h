@@ -83,6 +83,8 @@ struct C3Options {
   std::optional<std::vector<double>> u_eta_n;
   std::optional<std::vector<double>> u_eta_t;
   std::optional<std::vector<double>> u_eta;
+  //std::optional<std::vector<double>> x_init;
+
 
   template <typename Archive>
   void Serialize(Archive* a) {
@@ -102,6 +104,8 @@ struct C3Options {
 
     a->Visit(DRAKE_NVP(rho_scale));
     a->Visit(DRAKE_NVP(gamma));
+
+    //a->Visit(DRAKE_NVP(x_init));
 
     a->Visit(DRAKE_NVP(w_Q));
     a->Visit(DRAKE_NVP(w_R));
@@ -161,12 +165,12 @@ struct C3Options {
     u_vector.insert(u_vector.end(), u_u.begin(), u_u.end());
     if (u_eta != std::nullopt || u_eta_slack != std::nullopt) {
       if (u_eta == std::nullopt || u_eta->empty()) {
-        g_vector.insert(g_vector.end(), u_eta_slack->begin(),
+        u_vector.insert(u_vector.end(), u_eta_slack->begin(),
                         u_eta_slack->end());
-        g_vector.insert(g_vector.end(), u_eta_n->begin(), u_eta_n->end());
-        g_vector.insert(g_vector.end(), u_eta_t->begin(), u_eta_t->end());
+        u_vector.insert(u_vector.end(), u_eta_n->begin(), u_eta_n->end());
+        u_vector.insert(u_vector.end(), u_eta_t->begin(), u_eta_t->end());
       } else {
-        g_vector.insert(g_vector.end(), u_eta->begin(), u_eta->end());
+        u_vector.insert(u_vector.end(), u_eta->begin(), u_eta->end());
       }
     }
 
@@ -179,6 +183,7 @@ struct C3Options {
     Eigen::VectorXd u = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(
         this->u_vector.data(), this->u_vector.size());
 
+    //std::cout << "g size: " << g.size() << " u size: " << u.size() << std::endl;
     DRAKE_DEMAND(g.size() == u.size());
 
     Q = w_Q * q.asDiagonal();
