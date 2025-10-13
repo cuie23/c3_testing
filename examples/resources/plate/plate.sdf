@@ -43,51 +43,43 @@
 
 
 
+      <link name="link_x"/>
       <joint name="plate_x" type="prismatic">
         <parent>world</parent>
         <child>link_x</child>
         <axis><xyz>1 0 0</xyz></axis>
       </joint>
 
-      <link name="link_x"/>
-
+      <link name="link_y"/>
       <joint name="plate_y" type="prismatic">
         <parent>link_x</parent>
         <child>link_y</child>
         <axis><xyz>0 1 0</xyz></axis>
       </joint>
 
-      <link name="link_y"/>
-
+      <link name="link_z"/>
       <joint name="plate_z" type="prismatic">
         <parent>link_y</parent>
-        <child>plate</child>
+        <child>link_z</child>
         <axis><xyz>0 0 1</xyz></axis>
       </joint>
 
       <link name="link_roll"/>
       <joint name="plate_roll" type="revolute">
+        <parent>link_z</parent>
+        <child>link_roll</child>
+        <axis>
+          <xyz>1 0 0</xyz>
+          <limit><lower>-1</lower><upper>1</upper></limit>
+        </axis>
+      </joint>
+
+      <joint name="plate_pitch" type="revolute">
         <parent>link_roll</parent>
         <child>plate</child>
         <axis>
-          <xyz>1 0 0</xyz>
-          <limit>
-            <lower>-0.5</lower>
-            <upper>0.5</upper>
-          </limit>
-          </axis>
-      </joint>
-
-      <link name="link_pitch"/>
-      <joint name="plate_pitch" type="prismatic">
-        <parent>link_pitch</parent>
-        <child>plate</child>
-        <axis>
           <xyz>0 1 0</xyz>
-          <limit>
-            <lower>-0.5</lower>
-            <upper>0.5</upper>
-          </limit>
+          <limit><lower>-1</lower><upper>1</upper></limit>
         </axis>
       </joint>
 

@@ -58,8 +58,8 @@ c3_options:
              1, 1,                    # plate rot
              5000, 5000, 5000, 5000,    # cube rot
              3000, 3000, 3000,           # cube pos              
-             50, 50, 50,                # plate velo
-             50, 50,                    # plate ang velo
+             10, 10, 10,                # plate velo
+             10, 10,                    # plate ang velo
              0.1, 0.1, 0.1,             # cube ang velo
              10, 10, 10]                # cube velo
 

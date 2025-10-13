@@ -28,6 +28,11 @@
 #include "drake/multibody/plant/externally_applied_spatial_force.h"
 #include "drake/systems/rendering/multibody_position_to_geometry_pose.h"
 
+#include <drake/systems/primitives/saturation.h>
+#include <drake/systems/framework/leaf_system.h>
+
+
+
 DEFINE_string(experiment_type, "cube_pivoting",
               "The type of experiment to test the LCSFactorySystem with. "
               "Options: 'cartpole_softwalls [Frictionless Spring System]', "
@@ -51,6 +56,56 @@ using drake::multibody::MultibodyPlant;
 using drake::multibody::Parser;
 using drake::systems::DiagramBuilder;
 using drake::systems::rendering::MultibodyPositionToGeometryPose;
+
+class TimedGravityCompGate final : public drake::systems::LeafSystem<double> {
+ public:
+  // input_size = # of actuators (n_u)
+  TimedGravityCompGate(const MultibodyPlant<double>& plant, double t_delay, int input_size)
+    : plant_(plant), t_delay_(t_delay), input_size_(input_size) {
+    this->DeclareVectorInputPort("x_state", plant.num_multibody_states()+1);
+    this->DeclareVectorInputPort("u_ctrl", input_size_);
+    this->DeclareVectorOutputPort("u_out",
+        drake::systems::BasicVector<double>(input_size_),
+        &TimedGravityCompGate::CalcOutput);
+  }
+
+ private:
+  void CalcOutput(const drake::systems::Context<double>& context,
+                  drake::systems::BasicVector<double>* output) const {
+    const auto& x_in = this->get_input_port(0).Eval(context);     // [t; q; v]
+
+
+		Eigen::VectorXd x = x_in.head(x_in.size() - 1);  // skip timestamp
+    const auto& u_ctrl = this->get_input_port(1).Eval(context);
+    double t = context.get_time();
+
+    // Compute gravity torques/forces τ_g
+    // Need a temporary plant context
+		std::unique_ptr<drake::systems::Context<double>> plant_context = plant_.CreateDefaultContext();		
+		auto& context_ref = *plant_context;  
+
+    plant_.SetPositionsAndVelocities(&context_ref, x);
+
+    Eigen::VectorXd tau_g = plant_.CalcGravityGeneralizedForces(context_ref);
+
+    Eigen::VectorXd u_gravity = Eigen::VectorXd::Zero(plant_.num_actuators());
+
+		u_gravity[2] = -1 * (tau_g[2] + tau_g[10]); // Hard-coded cube + plate
+
+    if (t < t_delay_) {
+      // For first 5 s: only gravity compensation
+      output->SetFromVector(u_gravity);
+    } else {
+      // After 5 s: controller + gravity compensation
+      output->SetFromVector(u_ctrl);
+			std::cout << u_ctrl.transpose() << std::endl;
+    }
+  }
+
+  const MultibodyPlant<double>& plant_;
+  double t_delay_;
+  int input_size_;
+};
 
 class SoftWallReactionForce final : public drake::systems::LeafSystem<double> {
   // Converted to C++ from cartpole_softwall.py by Hien
@@ -505,6 +560,12 @@ int RunPlateTest() {
       plant_for_lcs, plant_for_lcs_context, *plant_autodiff,
       *plant_context_autodiff, contact_pairs, options.lcs_factory_options);
 
+	for (const auto& pname : plant.GetPositionNames()) {
+		std::cout << pname << std::endl;
+	}
+	for (const auto& vname : plant.GetVelocityNames()) {
+		std::cout << vname << std::endl;
+	}
 	std::cout << "Before add C3 controller" << std::endl;
 
   // Add the C3 controller.
@@ -548,10 +609,15 @@ int RunPlateTest() {
   builder.Connect(plant.get_state_output_port(),
                   vector_to_timestamped_vector->get_input_port_state());
 
+	auto gate = builder.AddSystem<TimedGravityCompGate>(plant, 5.0, 5);
   // Connect controller inputs.
   builder.Connect(
       vector_to_timestamped_vector->get_output_port_timestamped_state(),
       c3_controller->get_input_port_lcs_state());
+
+	builder.Connect(vector_to_timestamped_vector->get_output_port_timestamped_state(),
+                gate->get_input_port(0));
+
   builder.Connect(lcs_factory_system->get_output_port_lcs(),
                   c3_controller->get_input_port_lcs());
   builder.Connect(xdes->get_output_port(),
@@ -561,8 +627,11 @@ int RunPlateTest() {
   auto c3_input = builder.AddSystem<C3Solution2Input>(5);
   builder.Connect(c3_controller->get_output_port_c3_solution(),
                   c3_input->get_input_port_c3_solution());
-  builder.Connect(c3_input->get_output_port_c3_input(),
-                  plant.get_actuation_input_port());
+
+	builder.Connect(c3_input->get_output_port_c3_input(),
+									gate->get_input_port(1));
+	builder.Connect(gate->get_output_port(),
+									plant.get_actuation_input_port());
 
   // Add a ZeroOrderHold system for state updates.
   auto input_zero_order_hold =
@@ -632,13 +701,6 @@ int RunPlateTest() {
   std::vector<double> x_init = *options.x_init;
   x0 = Eigen::Map<Eigen::VectorXd>(x_init.data(), x_init.size());
 	std::cout << "x0: " << x0.transpose() << std::endl;
-
-	// for (const auto& pname : plant.GetPositionNames()) {
-	// 	std::cout << pname << std::endl;
-	// }
-	// for (const auto& vname : plant.GetVelocityNames()) {
-	// 	std::cout << vname << std::endl;
-	// }
 
 	auto& plant_context =
       diagram->GetMutableSubsystemContext(plant, diagram_context.get());
