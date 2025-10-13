@@ -87,14 +87,22 @@ class TimedGravityCompGate final : public drake::systems::LeafSystem<double> {
     plant_.SetPositionsAndVelocities(&context_ref, x);
 
     Eigen::VectorXd tau_g = plant_.CalcGravityGeneralizedForces(context_ref);
-
     Eigen::VectorXd u_gravity = Eigen::VectorXd::Zero(plant_.num_actuators());
 
+		// u_gravity[0] = -1 * (tau_g[0]);
+		// u_gravity[1] = -1 * (tau_g[1]);
 		u_gravity[2] = -1 * (tau_g[2] + tau_g[10]); // Hard-coded cube + plate
+		u_gravity[3] = (tau_g[10] * x[10]); // Hard-coded cube + plate
+		u_gravity[4] = (tau_g[10] * x[9]); // Hard-coded cube + plate
+
+		// u_gravity[4] = -1 * (tau_g[4]); // Hard-coded cube + plate
 
     if (t < t_delay_) {
       // For first 5 s: only gravity compensation
       output->SetFromVector(u_gravity);
+			//std::cout << "tau_g: " << tau_g.transpose() << std::endl;
+			std::cout << "u_gravity: " << u_gravity.transpose() << std::endl;
+
     } else {
       // After 5 s: controller + gravity compensation
       output->SetFromVector(u_ctrl);
