@@ -101,13 +101,15 @@ class TimedGravityCompGate final : public drake::systems::LeafSystem<double> {
       // For first 5 s: only gravity compensation
       output->SetFromVector(u_gravity);
 			//std::cout << "tau_g: " << tau_g.transpose() << std::endl;
-			std::cout << "u_gravity: " << u_gravity.transpose() << std::endl;
+			//std::cout << "u_gravity: " << u_gravity.transpose() << std::endl;
 
     } else {
       // After 5 s: controller + gravity compensation
       output->SetFromVector(u_ctrl);
-			std::cout << u_ctrl.transpose() << std::endl;
+			//std::cout << u_ctrl.transpose() << std::endl;
     }
+		//std::cout << u_ctrl.transpose() << std::endl;
+
   }
 
   const MultibodyPlant<double>& plant_;
@@ -504,7 +506,7 @@ int RunPlateTest() {
   // Build the plant and scene graph for the pivoting system.
   DiagramBuilder<double> plant_builder;
   auto [plant_for_lcs, scene_graph_for_lcs] =
-      AddMultibodyPlantSceneGraph(&plant_builder, 0.0);
+      AddMultibodyPlantSceneGraph(&plant_builder, 0);
   Parser parser_for_lcs(&plant_for_lcs, &scene_graph_for_lcs);
 
   const std::string plate_file_lcs = "examples/resources/plate/plate.sdf";
@@ -538,7 +540,7 @@ int RunPlateTest() {
 
   // Build the main diagram.
   DiagramBuilder<double> builder;
-  auto [plant, scene_graph] = AddMultibodyPlantSceneGraph(&builder, 0.01);
+  auto [plant, scene_graph] = AddMultibodyPlantSceneGraph(&builder, 0.001);
   Parser parser(&plant, &scene_graph);
   const std::string plate_file = "examples/resources/plate/plate.sdf";
 	const std::string cube_file = "examples/resources/plate/cube.sdf";
@@ -598,7 +600,6 @@ int RunPlateTest() {
   // c3_controller->AddLinearConstraint(A, lower_bound, upper_bound,
   //                                    ConstraintVariable::STATE);
 
-  // Add a constant vector source for the desired state = ee rot, ee pos, cube rot, cube pos
   Eigen::VectorXd xd(23);
   //xd << 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
 	xd << 0, 0, 0, 0, 0, 0, 1, 0, 0, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0;
@@ -617,7 +618,7 @@ int RunPlateTest() {
   builder.Connect(plant.get_state_output_port(),
                   vector_to_timestamped_vector->get_input_port_state());
 
-	auto gate = builder.AddSystem<TimedGravityCompGate>(plant, 5.0, 5);
+	auto gate = builder.AddSystem<TimedGravityCompGate>(plant, 2.0, 5);
   // Connect controller inputs.
   builder.Connect(
       vector_to_timestamped_vector->get_output_port_timestamped_state(),
@@ -717,7 +718,7 @@ int RunPlateTest() {
   // Create and configure the simulator.
   drake::systems::Simulator<double> simulator(*diagram,
                                               std::move(diagram_context));
-  simulator.set_target_realtime_rate(1);  // Run simulation at real-time speed.
+  simulator.set_target_realtime_rate(0.25);  // Run simulation at real-time speed.
   simulator.Initialize();
   simulator.AdvanceTo(120.0);  // Run simulation for 10 seconds.
 

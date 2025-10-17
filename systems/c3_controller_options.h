@@ -59,6 +59,9 @@ struct C3ControllerOptions {
   // Additional options specific to the C3Controller
   double solve_time_filter_alpha = 0.0;
   double publish_frequency = 100.0;  // Hz
+  std::vector<int> quaternion_indices;
+  double quaternion_weight = 0.0;
+  double quaternion_regularizer_fraction = 0.0;
 
   std::optional<std::vector<double>> x_init;
   std::optional<std::vector<double>> x_des;
@@ -76,6 +79,9 @@ struct C3ControllerOptions {
     a->Visit(DRAKE_NVP(state_prediction_joints));
     a->Visit(DRAKE_NVP(x_init));
     a->Visit(DRAKE_NVP(x_des));
+    a->Visit(DRAKE_NVP(quaternion_indices));    
+    a->Visit(DRAKE_NVP(quaternion_weight));    
+    a->Visit(DRAKE_NVP(quaternion_regularizer_fraction));
 
     if (projection_type == "QP") {
       DRAKE_DEMAND(lcs_factory_options.contact_model == "anitescu");
