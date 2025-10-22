@@ -618,7 +618,7 @@ int RunPlateTest() {
   builder.Connect(plant.get_state_output_port(),
                   vector_to_timestamped_vector->get_input_port_state());
 
-	auto gate = builder.AddSystem<TimedGravityCompGate>(plant, 2.0, 5);
+	auto gate = builder.AddSystem<TimedGravityCompGate>(plant, 1.0, 5);
   // Connect controller inputs.
   builder.Connect(
       vector_to_timestamped_vector->get_output_port_timestamped_state(),

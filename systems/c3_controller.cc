@@ -326,9 +326,6 @@ void C3Controller::UpdateQuaternionCosts(
         discount_factor *= controller_options_.c3_options.gamma;
 
         double Q_min_eigenval = Q_[i].eigenvalues().real().minCoeff();
-
-        std::cout << quat_hessian_i << std::endl;
-        std::cout << Q_min_eigenval << std::endl << std::endl;
       }
     }
   }
