@@ -26,9 +26,10 @@ namespace c3 {
 namespace systems {
 
 iC3::iC3(
-    const drake::multibody::MultibodyPlant<double>& plant,
-    const drake::multibody::MultibodyPlant<double>& plant_ad,
-    const C3::CostMatrices& costs, C3ControllerOptions controller_options)
+    drake::multibody::MultibodyPlant<double>& plant,
+    drake::multibody::MultibodyPlant<drake::AutoDiffXd>& plant_ad,
+    C3::CostMatrices& costs, 
+    C3ControllerOptions controller_options)
     : plant_(plant),
       plant_ad_(plant_ad),
       controller_options_(controller_options),
@@ -75,12 +76,16 @@ iC3::iC3(
 
 }
 
-  std::vector<VectorXd> iC3::ComputeTrajectory(const Context<double>& context,
-    const Context<double>& context_ad, 
+  std::vector<VectorXd> iC3::ComputeTrajectory(
+    drake::systems::Context<double>& context,
+    drake::systems::Context<drake::AutoDiffXd>& context_ad, 
     const std::vector<drake::SortedPair<drake::geometry::GeometryId>>& contact_geoms) {
 
-    VectorXd x0 = controller_options_.x_init;
-    VectorXd xd = controller_options_.x_des;
+    std::vector<double> x_init = *controller_options_.x_init;
+    VectorXd x0 = Eigen::Map<VectorXd>(x_init.data(), x_init.size());    
+
+    std::vector<double> x_des = *controller_options_.x_des;
+    VectorXd xd = Eigen::Map<VectorXd>(x_des.data(), x_des.size());  
 
     std::vector<VectorXd> x_hat(N_, x0);
     std::vector<VectorXd> u_hat(N_, Eigen::VectorXd::Zero(n_u_));
@@ -88,14 +93,14 @@ iC3::iC3(
     int num_iters = 50;
 
     // Set up time varying LCS
-    std::vector<Eigen::MatrixXd>& A;
-    std::vector<Eigen::MatrixXd>& B;
-    std::vector<Eigen::MatrixXd>& D;
-    std::vector<Eigen::VectorXd>& d;
-    std::vector<Eigen::MatrixXd>& E;
-    std::vector<Eigen::MatrixXd>& F;
-    std::vector<Eigen::MatrixXd>& H;
-    std::vector<Eigen::VectorXd>& c;
+    std::vector<Eigen::MatrixXd> A;
+    std::vector<Eigen::MatrixXd> B;
+    std::vector<Eigen::MatrixXd> D;
+    std::vector<Eigen::VectorXd> d;
+    std::vector<Eigen::MatrixXd> E;
+    std::vector<Eigen::MatrixXd> F;
+    std::vector<Eigen::MatrixXd> H;
+    std::vector<Eigen::VectorXd> c;
 
     for (int iter = 0; iter < num_iters; iter++) {
 
@@ -111,14 +116,17 @@ iC3::iC3(
       // Create time-varying LCS, linearized about x_hat
       for (int k = 0; k < N_; k++) {
         // Set context to current nominal state and input
-        plant_->SetPositionsAndVelocities(context, x_hat[k]);
-        plant_->get_input_port().FixValue(context, u_hat[k]);
-        plant_ad->SetPositionsAndVelocities(context_ad, x_hat[k]);
-        plant_ad->get_input_port().FixValue(context_ad, u_hat[k]);
+        plant_.SetPositionsAndVelocities(&context, x_hat[k]);
+        plant_.get_input_port().FixValue(&context, u_hat[k]);
+
+        Eigen::VectorX<AutoDiffXd> x_hat_ad = drake::math::InitializeAutoDiff(x_hat[k]);
+        Eigen::VectorX<AutoDiffXd> u_hat_ad = drake::math::InitializeAutoDiff(u_hat[k]);
+        plant_ad_.SetPositionsAndVelocities(&context_ad, x_hat_ad);
+        plant_ad_.get_input_port().FixValue(&context_ad, u_hat_ad);
 
         LCSFactory lcs_factory(plant_, context, plant_ad_, context_ad, 
             contact_geoms, controller_options_.lcs_factory_options);
-        LCS lcs = lcs_factory->GenerateLCS();
+        LCS lcs = lcs_factory.GenerateLCS();
 
         A.push_back(lcs.A()[0]);
         B.push_back(lcs.B()[0]);

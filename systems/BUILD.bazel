@@ -48,6 +48,25 @@ cc_library( name = "c3_controller",
     ],
 )
 
+cc_library( name = "iC3",
+    srcs = [
+        "iC3.cc",
+    ],
+    hdrs = [
+        "iC3.h",
+    ],
+    deps = [
+        ":options",
+        ":framework",
+        "//core:c3",
+        "//core:lcs",
+        "//core:options",
+        "//multibody:lcs_factory",
+        "//systems:quaternion_error_hessian",
+        "@drake//:drake_shared_library",
+    ],
+)
+
 cc_library( name = "lcs_simulator",
     srcs = [
         "lcs_simulator.cc",

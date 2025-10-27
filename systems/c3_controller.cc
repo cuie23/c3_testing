@@ -33,7 +33,7 @@ C3Controller::C3Controller(
     : plant_(plant),
       controller_options_(controller_options),
       publish_frequency_(controller_options.publish_frequency),
-      N_(controller_options_.lcs_factory_options.N) {
+      N_(controller_options_.lcs_factory_options.N) {     
   this->set_name("c3_controller");
 
   // Initialize dimensions

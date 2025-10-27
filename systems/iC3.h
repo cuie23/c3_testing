@@ -21,22 +21,24 @@ namespace systems {
 class iC3 : public drake::systems::LeafSystem<double> {
 
 public:
-  iC3::iC3(
-    const drake::multibody::MultibodyPlant<double>& plant,
-    const drake::multibody::MultibodyPlant<double>& plant_ad,
-    const C3::CostMatrices& costs, C3ControllerOptions controller_options);
+ explicit iC3(
+    drake::multibody::MultibodyPlant<double>& plant,
+    drake::multibody::MultibodyPlant<drake::AutoDiffXd>& plant_ad,
+    C3::CostMatrices& costs, 
+    C3ControllerOptions controller_options);
 
-  std::vector<VectorXd> iC3::ComputeTrajectory(const Context<double>& context,
-      const Context<double>& context_ad,
-      const std::vector<drake::SortedPair<drake::geometry::GeometryId>>& contact_geoms);
+  std::vector<VectorXd> ComputeTrajectory(
+    drake::systems::Context<double>& context,
+    drake::systems::Context<drake::AutoDiffXd>& context_ad, 
+    const std::vector<drake::SortedPair<drake::geometry::GeometryId>>& contact_geoms);
 
 private:
   
-void iC3::UpdateQuaternionCosts(
+  void UpdateQuaternionCosts(
     std::vector<VectorXd> x_hat, const Eigen::VectorXd& x_des);
 
   const drake::multibody::MultibodyPlant<double>& plant_;
-  const drake::multibody::MultibodyPlant<double>& plant_ad_;
+  const drake::multibody::MultibodyPlant<drake::AutoDiffXd>& plant_ad_;
 
   // C3 options and solver configuration.
   C3ControllerOptions controller_options_;
@@ -60,6 +62,7 @@ void iC3::UpdateQuaternionCosts(
 
   int N_;  ///< Horizon length.
 
-} 
+};
+
 } // namespace systems
 } // namespace c3
