@@ -10,6 +10,7 @@ cc_library(
         ":framework",
         ":options",
         ":c3_controller",
+        ":iC3",
         ":lcs_simulator",
         ":lcs_factory_system",
     ]

@@ -76,7 +76,7 @@ iC3::iC3(
 
 }
 
-  std::vector<VectorXd> iC3::ComputeTrajectory(
+  std::vector<MatrixXd> iC3::ComputeTrajectory(
     drake::systems::Context<double>& context,
     drake::systems::Context<drake::AutoDiffXd>& context_ad, 
     const std::vector<drake::SortedPair<drake::geometry::GeometryId>>& contact_geoms) {
@@ -87,7 +87,7 @@ iC3::iC3(
     std::vector<double> x_des = *controller_options_.x_des;
     VectorXd xd = Eigen::Map<VectorXd>(x_des.data(), x_des.size());  
 
-    std::vector<VectorXd> x_hat(N_, x0);
+    MatrixXd x_hat = x0.transpose().replicate(N_, 1);
     std::vector<VectorXd> u_hat(N_, Eigen::VectorXd::Zero(n_u_));
 
     int num_iters = 50;
@@ -102,8 +102,10 @@ iC3::iC3(
     std::vector<Eigen::MatrixXd> H;
     std::vector<Eigen::VectorXd> c;
 
-    for (int iter = 0; iter < num_iters; iter++) {
+    std::vector<MatrixXd> all_x_hats;
+    all_x_hats.push_back(x_hat);
 
+    for (int iter = 0; iter < num_iters; iter++) {
       A.clear();
       B.clear();
       D.clear();
@@ -115,17 +117,13 @@ iC3::iC3(
       
       // Create time-varying LCS, linearized about x_hat
       for (int k = 0; k < N_; k++) {
-        // Set context to current nominal state and input
-        plant_.SetPositionsAndVelocities(&context, x_hat[k]);
-        plant_.get_input_port().FixValue(&context, u_hat[k]);
-
-        Eigen::VectorX<AutoDiffXd> x_hat_ad = drake::math::InitializeAutoDiff(x_hat[k]);
-        Eigen::VectorX<AutoDiffXd> u_hat_ad = drake::math::InitializeAutoDiff(u_hat[k]);
-        plant_ad_.SetPositionsAndVelocities(&context_ad, x_hat_ad);
-        plant_ad_.get_input_port().FixValue(&context_ad, u_hat_ad);
 
         LCSFactory lcs_factory(plant_, context, plant_ad_, context_ad, 
             contact_geoms, controller_options_.lcs_factory_options);
+      
+        // Set context to current nominal state and input
+        lcs_factory.UpdateStateAndInput(x_hat.row(k), u_hat[k]);
+
         LCS lcs = lcs_factory.GenerateLCS();
 
         A.push_back(lcs.A()[0]);
@@ -148,19 +146,21 @@ iC3::iC3(
         std::vector<VectorXd>(N_ + 1, xd);
       c3_->UpdateLCS(time_varying_lcs);
       c3_->UpdateTarget(target);
-      c3_->Solve(x_hat[0]);
+      c3_->Solve(x_hat.row(0));
 
       std::vector<Eigen::VectorXd> x_sol = c3_->GetStateSolution();
 
-      x_hat = x_sol;
-
+      for (int k = 0; k < N_; k++) {
+        x_hat.row(k) = x_sol[k].transpose();
+      }
+      all_x_hats.push_back(x_hat);
     }
-
-    return x_hat;
+    std::cout << "returned all_x_hats" << std::endl;
+    return all_x_hats;
   }
 
   void iC3::UpdateQuaternionCosts(
-    std::vector<VectorXd> x_hat, const Eigen::VectorXd& x_des) {
+    MatrixXd x_hat, const Eigen::VectorXd& x_des) {
     
     Q_.clear();
     R_.clear();
@@ -184,7 +184,7 @@ iC3::iC3(
       for (int index : controller_options_.quaternion_indices) {
       
         // make quaternion costs time-varying based on x_hat
-        Eigen::VectorXd quat_curr_i = x_hat[i].segment(index, 4);
+        Eigen::VectorXd quat_curr_i = x_hat.row(i).segment(index, 4);
         Eigen::VectorXd quat_des_i = x_des.segment(index, 4);
 
         Eigen::MatrixXd quat_hessian_i = common::hessian_of_squared_quaternion_angle_difference(quat_curr_i, quat_des_i);

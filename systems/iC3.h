@@ -27,15 +27,16 @@ public:
     C3::CostMatrices& costs, 
     C3ControllerOptions controller_options);
 
-  std::vector<VectorXd> ComputeTrajectory(
+  std::vector<MatrixXd> ComputeTrajectory(
     drake::systems::Context<double>& context,
     drake::systems::Context<drake::AutoDiffXd>& context_ad, 
     const std::vector<drake::SortedPair<drake::geometry::GeometryId>>& contact_geoms);
 
 private:
   
+  // x_hat (N by n_x), kth row is x at time k
   void UpdateQuaternionCosts(
-    std::vector<VectorXd> x_hat, const Eigen::VectorXd& x_des);
+    MatrixXd x_hat, const Eigen::VectorXd& x_des);
 
   const drake::multibody::MultibodyPlant<double>& plant_;
   const drake::multibody::MultibodyPlant<drake::AutoDiffXd>& plant_ad_;

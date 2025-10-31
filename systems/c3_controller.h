@@ -138,7 +138,7 @@ class C3Controller : public drake::systems::LeafSystem<double> {
    * 3. Clamping the predicted state to ensure joint positions and velocities
    *    respect the maximum acceleration constraints.
    *
-   * This is the default behavior, but users can customize this function
+   * This is the default behavior, but users can customize this ffunction
    * according to their specific needs.
    *
    * If the solve time is zero, the function returns early without modifying

@@ -46,8 +46,11 @@ cc_binary(
     deps = [
         "//core:c3",
         "//core:c3_cartpole_problem",
+        "//lcmtypes:lcmt_robot",
+        "//lcm:lcm_trajectory_saver",
         "//systems:systems",
         "//systems:system_utils",
+        "@drake//:drake_shared_library",
         "@gflags"
     ]
 )

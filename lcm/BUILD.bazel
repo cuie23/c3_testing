@@ -1,0 +1,27 @@
+load("@drake//tools/lint:lint.bzl", "add_lint_tests")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "lcm_trajectory_saver",
+    srcs = ["lcm_trajectory.cc"],
+    hdrs = ["lcm_trajectory.h"],
+    deps = [
+        "//lcmtypes:lcmt_robot",
+        "@drake//:drake_shared_library",
+        "@lcm",
+    ],
+)
+
+cc_library(
+    name = "lcm_driven_loop",
+    srcs = [
+    ],
+    hdrs = [
+        "lcm_driven_loop.h",
+    ],
+    deps = [
+        "//lcmtypes:lcmt_robot",
+        "@drake//:drake_shared_library",
+    ],
+)
