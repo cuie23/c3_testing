@@ -9,10 +9,10 @@ quaternion_indices: [5]
 quaternion_weight: 10000
 quaternion_regularizer_fraction: 0.0
 
-x_init: [0, 0, -0.2,
+x_init: [0, 0, -0.07,
         0, 0,    
         1, 0, 0, 0, 
-        -0.3, 0, -0.1,
+        -0.3, 0, 0,
         #-0.2, 0.2, -0.8, 
         0, 0, 0,
         0, 0,  
@@ -45,7 +45,7 @@ lcs_factory_options:
 
 c3_options:
   warm_start: false
-  end_on_qp_step: true
+  end_on_qp_step: false
   scale_lcs: false
 
   num_threads: 10
@@ -53,7 +53,7 @@ c3_options:
 
   M: 1000
 
-  admm_iter: 2
+  admm_iter: 5
 
   gamma: 1.0
   rho_scale: 1.1 #matrix scaling

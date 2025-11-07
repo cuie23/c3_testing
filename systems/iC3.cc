@@ -20,7 +20,6 @@ using Eigen::MatrixXd;
 using Eigen::MatrixXf;
 using Eigen::VectorXd;
 using Eigen::VectorXf;
-using std::vector;
 
 namespace c3 {
 namespace systems {
@@ -76,7 +75,7 @@ iC3::iC3(
 
 }
 
-  std::vector<MatrixXd> iC3::ComputeTrajectory(
+  pair<vector<MatrixXd>, vector<MatrixXd>> iC3::ComputeTrajectory(
     drake::systems::Context<double>& context,
     drake::systems::Context<drake::AutoDiffXd>& context_ad, 
     const std::vector<drake::SortedPair<drake::geometry::GeometryId>>& contact_geoms) {
@@ -87,76 +86,108 @@ iC3::iC3(
     std::vector<double> x_des = *controller_options_.x_des;
     VectorXd xd = Eigen::Map<VectorXd>(x_des.data(), x_des.size());  
 
-    MatrixXd x_hat = x0.transpose().replicate(N_, 1);
-    std::vector<VectorXd> u_hat(N_, Eigen::VectorXd::Zero(n_u_));
+    // ith column = ith timestep
+    MatrixXd x_hat = x0.replicate(1, N_+1);
+    MatrixXd u_hat(Eigen::MatrixXd::Zero(n_u_, N_));
 
     int num_iters = 50;
 
-    // Set up time varying LCS
-    std::vector<Eigen::MatrixXd> A;
-    std::vector<Eigen::MatrixXd> B;
-    std::vector<Eigen::MatrixXd> D;
-    std::vector<Eigen::VectorXd> d;
-    std::vector<Eigen::MatrixXd> E;
-    std::vector<Eigen::MatrixXd> F;
-    std::vector<Eigen::MatrixXd> H;
-    std::vector<Eigen::VectorXd> c;
+    vector<MatrixXd> all_x_hats;
+    vector<MatrixXd> all_u_hats;
 
-    std::vector<MatrixXd> all_x_hats;
     all_x_hats.push_back(x_hat);
+    all_u_hats.push_back(u_hat);
 
-    for (int iter = 0; iter < num_iters; iter++) {
-      A.clear();
-      B.clear();
-      D.clear();
-      d.clear();
-      E.clear();
-      F.clear();
-      H.clear();
-      c.clear();
+    LCSFactory lcs_factory(plant_, context, plant_ad_, context_ad, 
+        contact_geoms, controller_options_.lcs_factory_options);
+
+    lcs_factory.UpdateStateAndInput(x0, u_hat.col(0));
+    LCS lcs = lcs_factory.GenerateLCS();
+
+    for (int iter = 0; iter < num_iters-1; iter++) {
       
-      // Create time-varying LCS, linearized about x_hat
-      for (int k = 0; k < N_; k++) {
-
-        LCSFactory lcs_factory(plant_, context, plant_ad_, context_ad, 
-            contact_geoms, controller_options_.lcs_factory_options);
-      
-        // Set context to current nominal state and input
-        lcs_factory.UpdateStateAndInput(x_hat.row(k), u_hat[k]);
-
-        LCS lcs = lcs_factory.GenerateLCS();
-
-        A.push_back(lcs.A()[0]);
-        B.push_back(lcs.B()[0]);
-        D.push_back(lcs.D()[0]);
-        d.push_back(lcs.d()[0]);
-        E.push_back(lcs.E()[0]);
-        F.push_back(lcs.F()[0]);
-        H.push_back(lcs.H()[0]);
-        c.push_back(lcs.c()[0]);
-      }
-
-      LCS time_varying_lcs = LCS(A, B, D, d, E, F, H, c, dt_);
-
+      std::cout << "iC3 iteration " << iter << std::endl;
       UpdateQuaternionCosts(x_hat, xd);
       C3::CostMatrices new_costs(Q_, R_, G_, U_);
       c3_->UpdateCostMatrices(new_costs);
 
       std::vector<VectorXd> target =
         std::vector<VectorXd>(N_ + 1, xd);
-      c3_->UpdateLCS(time_varying_lcs);
+      c3_->UpdateLCS(lcs);
       c3_->UpdateTarget(target);
-      c3_->Solve(x_hat.row(0));
+      c3_->Solve(x_hat.col(0));
 
-      std::vector<Eigen::VectorXd> x_sol = c3_->GetStateSolution();
+      //vector<Eigen::VectorXd> x_sol = c3_->GetStateSolution();
+      vector<Eigen::VectorXd> u_sol = c3_->GetInputSolution();
 
       for (int k = 0; k < N_; k++) {
-        x_hat.row(k) = x_sol[k].transpose();
+        //x_hat.col(k) = x_sol[k];
+        u_hat.col(k) = u_sol[k];
       }
+
+      auto output = DoLCSRollout(x0, u_hat, lcs_factory);
+      lcs = output.first;
+      x_hat = output.second;
+
+
       all_x_hats.push_back(x_hat);
+      all_u_hats.push_back(u_hat);
+
     }
     std::cout << "returned all_x_hats" << std::endl;
-    return all_x_hats;
+    return std::make_pair(all_x_hats, all_u_hats);
+  }
+
+
+  pair<LCS, MatrixXd> iC3::DoLCSRollout(VectorXd x0, MatrixXd u_hat, LCSFactory factory) {
+
+    // Set up time varying LCS
+    vector<Eigen::MatrixXd> A;
+    vector<Eigen::MatrixXd> B;
+    vector<Eigen::MatrixXd> D;
+    vector<Eigen::VectorXd> d;
+    vector<Eigen::MatrixXd> E;
+    vector<Eigen::MatrixXd> F;
+    vector<Eigen::MatrixXd> H;
+    vector<Eigen::VectorXd> c;
+    A.clear();
+    B.clear();
+    D.clear();
+    d.clear();
+    E.clear();
+    F.clear();
+    H.clear();
+    c.clear();
+
+    MatrixXd x_hat(x0.size(), N_+1);
+    x_hat.col(0) = x0;
+    VectorXd x_curr = x0;
+    VectorXd x_next;
+
+    for (int k = 0; k < N_; k++) {
+
+      // Linearize about current point
+      factory.UpdateStateAndInput(x_curr, u_hat.col(k));
+      LCS lcs = factory.GenerateLCS();
+      A.push_back(lcs.A()[0]);
+      B.push_back(lcs.B()[0]);
+      D.push_back(lcs.D()[0]);
+      d.push_back(lcs.d()[0]);
+      E.push_back(lcs.E()[0]);
+      F.push_back(lcs.F()[0]);
+      H.push_back(lcs.H()[0]);
+      c.push_back(lcs.c()[0]);      
+
+      // Do one rollout step
+      VectorXd u_k = u_hat.col(k);
+      x_next = lcs.Simulate(x_curr, u_k, true);
+      x_hat.col(k+1) = x_next;
+      x_curr = x_next;
+    }
+
+    LCS output_lcs = LCS(A, B, D, d, E, F, H, c, dt_);
+    return std::make_pair(output_lcs, x_hat);
+
   }
 
   void iC3::UpdateQuaternionCosts(
@@ -184,7 +215,7 @@ iC3::iC3(
       for (int index : controller_options_.quaternion_indices) {
       
         // make quaternion costs time-varying based on x_hat
-        Eigen::VectorXd quat_curr_i = x_hat.row(i).segment(index, 4);
+        Eigen::VectorXd quat_curr_i = x_hat.col(i).segment(index, 4);
         Eigen::VectorXd quat_des_i = x_des.segment(index, 4);
 
         Eigen::MatrixXd quat_hessian_i = common::hessian_of_squared_quaternion_angle_difference(quat_curr_i, quat_des_i);
@@ -201,8 +232,12 @@ iC3::iC3(
             (quat_hessian_i + quat_regularizer_1 + 
             controller_options_.quaternion_regularizer_fraction * quat_regularizer_2 + quat_regularizer_3);
           discount_factor *= controller_options_.c3_options.gamma;
+
+        // double q_min_eigenval = Q_[i].eigenvalues().real().minCoeff();
+        // std::cout << "Q_" << i << " min eigenvalue " <<  q_min_eigenval << std::endl;
       }
     }
+    Q_[N_] = Q_[N_-1];
   }
 
   

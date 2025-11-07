@@ -162,8 +162,9 @@ class TrajToLcmSystem : public drake::systems::LeafSystem<double> {
         traj.datatypes = std::vector<std::string>(traj_i.rows(), "double");
         traj.datapoints = traj_i;
 
-        VectorXd timestamps(traj_i.rows());
-        for (int t = 0; t < traj_i.rows(); t++) {
+
+        VectorXd timestamps(traj_i.cols());
+        for (int t = 0; t < traj_i.cols(); t++) {
           timestamps(t) = t;
         }
         traj.time_vector = timestamps.cast<double>();
@@ -176,7 +177,6 @@ class TrajToLcmSystem : public drake::systems::LeafSystem<double> {
       msg->saved_traj = lcm_traj.GenerateLcmObject();
       msg->utime = context.get_time() * 1e6;   
 
-      std::cout << "calc message running" << std::endl;
   }
   
 
@@ -862,20 +862,33 @@ int RunPlateTestiC3(drake::lcm::DrakeLcm& lcm) {
 
   auto ic3_controller = systems::iC3(plant_for_lcs, *plant_autodiff, cost, options);
   
-  std::vector<MatrixXd> ic3_trajs = ic3_controller.ComputeTrajectory(plant_for_lcs_context, *plant_context_autodiff, contact_pairs);
+  pair<vector<MatrixXd>,vector<MatrixXd>> ic3_trajs = ic3_controller.ComputeTrajectory(plant_for_lcs_context, *plant_context_autodiff, contact_pairs);
+  vector<MatrixXd> x_traj = ic3_trajs.first;
+  vector<MatrixXd> u_traj = ic3_trajs.second;
+
+  std::cout << x_traj[46].middleRows(3, 2) << std::endl;
 
   // Publishes input std::vector<MatrixXd> as a lcmt_timestamped_saved_traj
-  auto traj_source = builder.AddSystem<TrajToLcmSystem>(ic3_trajs);
-  traj_source->set_name("traj_source");
+  auto traj_source_x = builder.AddSystem<TrajToLcmSystem>(x_traj);
+  traj_source_x->set_name("traj_source_x");
+  auto traj_source_u = builder.AddSystem<TrajToLcmSystem>(u_traj);
+  traj_source_u->set_name("traj_source_u");
 
-  auto traj_publisher = builder.AddSystem(
+  auto traj_publisher_x = builder.AddSystem(
       LcmPublisherSystem::Make<c3::lcmt_timestamped_saved_traj>(
-          "iC3_TRAJECTORY", &lcm,
+          "iC3_TRAJECTORY_X", &lcm,
           TriggerTypeSet({TriggerType::kForced})));
 
-  builder.Connect(traj_source->get_output_port(),
-                    traj_publisher->get_input_port());
+  auto traj_publisher_u = builder.AddSystem(
+      LcmPublisherSystem::Make<c3::lcmt_timestamped_saved_traj>(
+          "iC3_TRAJECTORY_U", &lcm,
+          TriggerTypeSet({TriggerType::kForced})));
 
+
+  builder.Connect(traj_source_x->get_output_port(),
+                    traj_publisher_x->get_input_port());
+  builder.Connect(traj_source_u->get_output_port(),
+                    traj_publisher_u->get_input_port());
 	// Eigen::Vector4d q_vec = xd.segment(5, 4);
 	// Eigen::Quaterniond q(q_vec(0), q_vec(1), q_vec(2), q_vec(3));
 	// q.normalize();
@@ -954,7 +967,7 @@ int RunPlateTestiC3(drake::lcm::DrakeLcm& lcm) {
   std::signal(SIGINT, SigIntHandler);
   auto output = diagram->AllocateOutput();
 
-  const std::chrono::milliseconds period(1000);
+  const std::chrono::milliseconds period(10);
   while (g_run.load()) {
     diagram->CalcOutput(*diagram_context, output.get()); 
     diagram->ForcedPublish(*diagram_context);

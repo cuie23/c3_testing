@@ -15,6 +15,9 @@
 #include "drake/multibody/plant/multibody_plant.h"
 #include "drake/systems/framework/leaf_system.h"
 
+using std::vector;
+using std::pair;
+
 namespace c3 {
 namespace systems {
 
@@ -27,13 +30,16 @@ public:
     C3::CostMatrices& costs, 
     C3ControllerOptions controller_options);
 
-  std::vector<MatrixXd> ComputeTrajectory(
+  pair<vector<MatrixXd>, vector<MatrixXd>> ComputeTrajectory(
     drake::systems::Context<double>& context,
     drake::systems::Context<drake::AutoDiffXd>& context_ad, 
-    const std::vector<drake::SortedPair<drake::geometry::GeometryId>>& contact_geoms);
+    const vector<drake::SortedPair<drake::geometry::GeometryId>>& contact_geoms);
 
 private:
   
+  // Given an initial x and u trajectory, return x rollout out using lcs
+  pair<LCS, MatrixXd> DoLCSRollout(VectorXd x0, MatrixXd u_hat, LCSFactory factory);
+
   // x_hat (N by n_x), kth row is x at time k
   void UpdateQuaternionCosts(
     MatrixXd x_hat, const Eigen::VectorXd& x_des);

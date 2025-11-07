@@ -72,6 +72,21 @@ const VectorXd LCS::Simulate(VectorXd& x_init, VectorXd& u,
   return x_final;
 }
 
+const VectorXd LCS::SimulateAtTimestep(VectorXd& x_init, VectorXd& u,
+                             bool regularized, int k) const {
+  VectorXd x_final;
+  VectorXd force;
+  drake::solvers::MobyLCPSolver<double> LCPSolver;
+  if (regularized) {
+    LCPSolver.SolveLcpLemkeRegularized(
+        F_[k], E_[k] * x_init + c_[k] + H_[k] * u, &force);
+  } else {
+    LCPSolver.SolveLcpLemke(F_[k], E_[k] * x_init + c_[k] + H_[k] * u, &force);
+  }
+  x_final = A_[k] * x_init + B_[k] * u + D_[k] * force + d_[k];
+  return x_final;
+}
+
 LCS LCS::CreatePlaceholderLCS(int n_x, int n_u, int n_lambda, int N,
                               double dt) {
   MatrixXd A = MatrixXd::Ones(n_x, n_x);

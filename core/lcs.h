@@ -53,6 +53,9 @@ class LCS {
   const Eigen::VectorXd Simulate(Eigen::VectorXd& x_init, Eigen::VectorXd& u,
                                  bool regularized = false) const;
 
+  // Simulate system for one step with LCS matrices at kth timestep
+  const Eigen::VectorXd SimulateAtTimestep(Eigen::VectorXd& x_init, 
+                  Eigen::VectorXd& u, bool regularized, int k) const;
   /*!
    * Accessors dynamics terms
    */
