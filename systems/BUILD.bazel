@@ -9,6 +9,7 @@ cc_library(
     deps = [
         ":framework",
         ":options",
+        ":ic3_options",
         ":c3_controller",
         ":iC3",
         ":lcs_simulator",
@@ -62,6 +63,7 @@ cc_library( name = "iC3",
         "//core:c3",
         "//core:lcs",
         "//core:options",
+        "//systems:ic3_options",
         "//multibody:lcs_factory",
         "//systems:quaternion_error_hessian",
         "@drake//:drake_shared_library",
@@ -93,6 +95,7 @@ cc_library(
         ":framework",
         "//core:lcs",
         "//core:options",
+        "//systems:ic3_options",
         "//multibody:lcs_factory",
         "@drake//:drake_shared_library",
     ],
@@ -110,6 +113,15 @@ cc_library(
     ]
 )
 
+
+cc_library(
+    name = "ic3_options",
+    hdrs = [
+        "iC3_options.h",
+    ],
+    deps = [
+    ]
+)
 
 cc_library(
     name = "quaternion_error_hessian",

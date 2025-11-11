@@ -25,8 +25,8 @@
             </cylinder>
           </geometry>
           <drake:proximity_properties>
-            <drake:mu_static>0.5</drake:mu_static>
-            <drake:mu_dynamic>0.4</drake:mu_dynamic>
+            <drake:mu_static>0.6</drake:mu_static>
+            <drake:mu_dynamic>0.5</drake:mu_dynamic>
           </drake:proximity_properties>
         </collision>
       </link>

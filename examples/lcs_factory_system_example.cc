@@ -28,6 +28,7 @@
 #include "examples/common_systems.hpp"
 #include "systems/c3_controller.h"
 #include "systems/c3_controller_options.h"
+#include "systems/iC3_options.h"
 #include "systems/iC3.h"
 #include "systems/common/system_utils.hpp"
 #include "systems/lcs_factory_system.h"
@@ -58,6 +59,7 @@ DEFINE_string(diagram_path, "",
 
 using c3::systems::C3Controller;
 using c3::systems::C3ControllerOptions;
+using c3::systems::iC3Options;
 using c3::systems::LCSFactorySystem;
 using c3::systems::LCSSimulator;
 using c3::LcmTrajectory;
@@ -848,6 +850,8 @@ int RunPlateTestiC3(drake::lcm::DrakeLcm& lcm) {
   // Load controller options and cost matrices.
   C3ControllerOptions options = drake::yaml::LoadYamlFile<C3ControllerOptions>(
       "examples/resources/plate/c3_controller_plate_options.yaml");
+  iC3Options ic3_options = drake::yaml::LoadYamlFile<iC3Options>(
+      "examples/resources/plate/iC3_options.yaml");
   C3::CostMatrices cost = C3::CreateCostMatricesFromC3Options(
       options.c3_options, options.lcs_factory_options.N);
 
@@ -860,19 +864,21 @@ int RunPlateTestiC3(drake::lcm::DrakeLcm& lcm) {
       plant_for_lcs, plant_diagram_context.get());
   auto plant_context_autodiff = plant_autodiff->CreateDefaultContext(); 
 
-  auto ic3_controller = systems::iC3(plant_for_lcs, *plant_autodiff, cost, options);
+  auto ic3_controller = systems::iC3(plant_for_lcs, *plant_autodiff, cost, options, ic3_options);
   
-  pair<vector<MatrixXd>,vector<MatrixXd>> ic3_trajs = ic3_controller.ComputeTrajectory(plant_for_lcs_context, *plant_context_autodiff, contact_pairs);
-  vector<MatrixXd> x_traj = ic3_trajs.first;
-  vector<MatrixXd> u_traj = ic3_trajs.second;
-
-  std::cout << x_traj[46].middleRows(3, 2) << std::endl;
+  vector<vector<MatrixXd>> ic3_trajs = 
+    ic3_controller.ComputeTrajectory(plant_for_lcs_context, *plant_context_autodiff, contact_pairs);
+  vector<MatrixXd> x_traj = ic3_trajs[0];
+  vector<MatrixXd> u_traj = ic3_trajs[1];
+  vector<MatrixXd> c3_x_traj = ic3_trajs[2];
 
   // Publishes input std::vector<MatrixXd> as a lcmt_timestamped_saved_traj
   auto traj_source_x = builder.AddSystem<TrajToLcmSystem>(x_traj);
   traj_source_x->set_name("traj_source_x");
   auto traj_source_u = builder.AddSystem<TrajToLcmSystem>(u_traj);
   traj_source_u->set_name("traj_source_u");
+  auto traj_source_c3_x = builder.AddSystem<TrajToLcmSystem>(c3_x_traj);
+  traj_source_c3_x->set_name("traj_source_c3_x");
 
   auto traj_publisher_x = builder.AddSystem(
       LcmPublisherSystem::Make<c3::lcmt_timestamped_saved_traj>(
@@ -884,11 +890,17 @@ int RunPlateTestiC3(drake::lcm::DrakeLcm& lcm) {
           "iC3_TRAJECTORY_U", &lcm,
           TriggerTypeSet({TriggerType::kForced})));
 
+  auto traj_publisher_c3_x = builder.AddSystem(
+      LcmPublisherSystem::Make<c3::lcmt_timestamped_saved_traj>(
+          "iC3_TRAJECTORY_C3", &lcm,
+          TriggerTypeSet({TriggerType::kForced})));
 
   builder.Connect(traj_source_x->get_output_port(),
                     traj_publisher_x->get_input_port());
   builder.Connect(traj_source_u->get_output_port(),
                     traj_publisher_u->get_input_port());
+  builder.Connect(traj_source_c3_x->get_output_port(),
+                    traj_publisher_c3_x->get_input_port());
 	// Eigen::Vector4d q_vec = xd.segment(5, 4);
 	// Eigen::Quaterniond q(q_vec(0), q_vec(1), q_vec(2), q_vec(3));
 	// q.normalize();

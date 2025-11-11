@@ -197,6 +197,10 @@ class C3 {
   std::vector<Eigen::VectorXd> GetDualDeltaSolution() { return *delta_sol_; }
   std::vector<Eigen::VectorXd> GetDualWSolution() { return *w_sol_; }
 
+  void set_u_sol(std::vector<Eigen::VectorXd> u_sol_new) {
+    u_sol_ = std::make_unique<std::vector<Eigen::VectorXd>>(u_sol_new);
+  }
+
   int GetZSize() const { return n_z_; }
 
  protected:

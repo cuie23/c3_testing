@@ -9,6 +9,7 @@
 #include "core/c3_qp.h"
 #include "core/lcs.h"
 #include "systems/c3_controller_options.h"
+#include "systems/iC3_options.h"
 #include "systems/framework/c3_output.h"
 #include "systems/framework/timestamped_vector.h"
 
@@ -28,9 +29,9 @@ public:
     drake::multibody::MultibodyPlant<double>& plant,
     drake::multibody::MultibodyPlant<drake::AutoDiffXd>& plant_ad,
     C3::CostMatrices& costs, 
-    C3ControllerOptions controller_options);
+    C3ControllerOptions controller_options, iC3Options ic3_options);
 
-  pair<vector<MatrixXd>, vector<MatrixXd>> ComputeTrajectory(
+  vector<vector<MatrixXd>> ComputeTrajectory(
     drake::systems::Context<double>& context,
     drake::systems::Context<drake::AutoDiffXd>& context_ad, 
     const vector<drake::SortedPair<drake::geometry::GeometryId>>& contact_geoms);
@@ -39,6 +40,10 @@ private:
   
   // Given an initial x and u trajectory, return x rollout out using lcs
   pair<LCS, MatrixXd> DoLCSRollout(VectorXd x0, MatrixXd u_hat, LCSFactory factory);
+  LCS MakeTimeVaryingLCS(MatrixXd x_hat, MatrixXd u_hat, LCSFactory factory);
+
+  // removes num_timesteps_to_remove timesteps from the front of the LCS
+  LCS ShortenLCSFront(LCS lcs, int num_timesteps_to_remove);
 
   // x_hat (N by n_x), kth row is x at time k
   void UpdateQuaternionCosts(
@@ -49,6 +54,7 @@ private:
 
   // C3 options and solver configuration.
   C3ControllerOptions controller_options_;
+  iC3Options ic3_options_;
 
   // Convenience variables for dimensions.
   int n_q_;       ///< Number of generalized positions.
