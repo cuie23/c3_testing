@@ -45,9 +45,11 @@ private:
   // removes num_timesteps_to_remove timesteps from the front of the LCS
   LCS ShortenLCSFront(LCS lcs, int num_timesteps_to_remove);
 
+  C3::CostMatrices ShortenCostsFront(int num_timesteps_to_remove);
+
   // x_hat (N by n_x), kth row is x at time k
   void UpdateQuaternionCosts(
-    MatrixXd x_hat, const Eigen::VectorXd& x_des);
+    MatrixXd x_hat, const Eigen::VectorXd& x_des, vector<VectorXd> c3_quat_norms);
 
   const drake::multibody::MultibodyPlant<double>& plant_;
   const drake::multibody::MultibodyPlant<drake::AutoDiffXd>& plant_ad_;

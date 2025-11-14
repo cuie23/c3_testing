@@ -1,4 +1,5 @@
 #include "quaternion_error_hessian.h"
+#include <iostream> 
 
 namespace c3 {
 namespace systems {
@@ -44,6 +45,7 @@ MatrixXd hessian_of_squared_quaternion_angle_difference(
     // If difference is very small set to closed-form limit to avoid NaN's
     if ((quat - quat_desired).norm() < 1e-3 ||
         std::abs(quat.dot(quat_desired) - 1.0) < 1e-3) {
+        std::cout << "quaternion fallback" << std::endl;
         return small_angle_hessian_at(quat);
     }
 

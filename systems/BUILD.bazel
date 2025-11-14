@@ -12,6 +12,7 @@ cc_library(
         ":ic3_options",
         ":c3_controller",
         ":iC3",
+        ":manual_input",
         ":lcs_simulator",
         ":lcs_factory_system",
     ]
@@ -46,6 +47,20 @@ cc_library( name = "c3_controller",
         "//core:options",
         "//multibody:lcs_factory",
         "//systems:quaternion_error_hessian",
+        "@drake//:drake_shared_library",
+    ],
+)
+
+cc_library( name = "manual_input",
+    srcs = [
+        "manual_input.cc",
+    ],
+    hdrs = [
+        "manual_input.h",
+    ],
+    deps = [
+        ":options",
+        "//core:c3",
         "@drake//:drake_shared_library",
     ],
 )
@@ -174,6 +189,21 @@ cc_test(
         ":framework",
         "@gtest//:main",
     ],
+)
+
+cc_test(
+    name = "quaternion_cost_test",
+    srcs = [
+        "test/quaternion_cost_test.cc"
+    ],
+    data = [
+        "test/quaternion_cost_test.yaml"
+    ],
+    deps = [
+        ":systems",
+        "@gtest//:main",
+    ],
+    size = "small",
 )
 
 filegroup(

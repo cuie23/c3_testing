@@ -1,4 +1,4 @@
-num_iters: 15
+num_iters: 30
 add_position_constraints: true
 
 num_segments: 20

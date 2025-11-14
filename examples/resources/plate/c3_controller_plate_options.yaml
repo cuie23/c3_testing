@@ -12,7 +12,7 @@ quaternion_regularizer_fraction: 0.0
 x_init: [0, 0, -0.07,
         0, 0,    
         1, 0, 0, 0, 
-        0, 0, 0,
+        -0, 0, 0,
         #-0.2, 0.2, -0.8, 
         0, 0, 0,
         0, 0,  
@@ -22,10 +22,10 @@ x_init: [0, 0, -0.07,
 x_des: [0, 0, 0,
         0, 0,
         #1, 0, 0, 0, 
-        #0.707, 0, 0.707, 0, 
+        0.707, 0, 0.707, 0, 
         #0, 0.707, 0, 0.707,
-        0, 0, 1, 0,
-        0, 0, 0.0, 
+        #0, 0, 1, 0,
+        -0, 0, 0.0, 
         0, 0, 0,
         0, 0,
         0, 0, 0, 
@@ -44,7 +44,7 @@ lcs_factory_options:
   dt: 0.02
 
 c3_options:
-  penalize_input_change: false
+  penalize_input_change: true
 
   warm_start: false
   end_on_qp_step: false
@@ -61,7 +61,7 @@ c3_options:
   rho_scale: 1.1 #matrix scaling
   w_Q: 5
   w_R: 1 #Penalty on all decision variables, assuming scalar
-  w_G: 0.8 #Penalty on all decision variables, assuming scalar
+  w_G: 2 #Penalty on all decision variables, assuming scalar
   w_U: 1 #State Tracking Error, assuming diagonal
 
 

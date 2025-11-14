@@ -22,8 +22,10 @@
 #include <drake/systems/primitives/zero_order_hold.h>
 #include <drake/systems/lcm/lcm_publisher_system.h>
 #include <drake/lcm/drake_lcm.h>
+#include <drake/systems/primitives/vector_log_sink.h>
 #include <gflags/gflags.h>
 
+#include "systems/common/quaternion_error_hessian.h"
 #include "core/test/c3_cartpole_problem.hpp"
 #include "examples/common_systems.hpp"
 #include "systems/c3_controller.h"
@@ -33,6 +35,7 @@
 #include "systems/common/system_utils.hpp"
 #include "systems/lcs_factory_system.h"
 #include "systems/lcs_simulator.h"
+#include "systems/manual_input.h"
 #include "lcm/lcm_trajectory.h"
 
 #include "c3/lcmt_timestamped_saved_traj.hpp"
@@ -62,6 +65,8 @@ using c3::systems::C3ControllerOptions;
 using c3::systems::iC3Options;
 using c3::systems::LCSFactorySystem;
 using c3::systems::LCSSimulator;
+using c3::systems::ManualInput;
+
 using c3::LcmTrajectory;
 
 using drake::SortedPair;
@@ -184,6 +189,59 @@ class TrajToLcmSystem : public drake::systems::LeafSystem<double> {
 
   std::vector<MatrixXd> traj_set_;
 };
+
+std::pair<vector<MatrixXd>, vector<MatrixXd>> UpdateQuaternionCosts(
+  C3ControllerOptions options, MatrixXd x_hat, const Eigen::VectorXd& x_des) {
+  
+  vector<MatrixXd> Q;
+  vector<MatrixXd> R;
+  vector<MatrixXd> G;
+  vector<MatrixXd> U;
+
+  int N = options.lcs_factory_options.N;
+
+  double discount_factor = 1;
+  for (int i = 0; i < N; i++) {
+    Q.push_back(discount_factor * options.c3_options.Q);
+    discount_factor *=  options.c3_options.gamma;
+    if (i < N) {
+      R.push_back(discount_factor * options.c3_options.R);
+      G.push_back(options.c3_options.G);
+      U.push_back(options.c3_options.U);
+    }
+  }  
+  Q.push_back(discount_factor * options.c3_options.Q); 
+
+  for (int i = 0; i < N + 1; i++) {
+    for (int index : options.quaternion_indices) {
+    
+      // make quaternion costs time-varying based on x_hat
+      Eigen::VectorXd quat_curr_i = x_hat.col(i).segment(index, 4);
+      Eigen::VectorXd quat_des_i = x_des.segment(index, 4);
+
+      Eigen::MatrixXd quat_hessian_i = systems::common::hessian_of_squared_quaternion_angle_difference(quat_curr_i, quat_des_i);
+
+      // Regularize hessian so Q is always PSD
+      double min_eigenval = quat_hessian_i.eigenvalues().real().minCoeff();
+      Eigen::MatrixXd quat_regularizer_1 = std::max(0.0, -min_eigenval) * Eigen::MatrixXd::Identity(4, 4);
+      Eigen::MatrixXd quat_regularizer_2 = quat_des_i * quat_des_i.transpose();
+      Eigen::MatrixXd quat_regularizer_3 = 1e-8 * Eigen::MatrixXd::Identity(4, 4);
+
+      double discount_factor = 1;
+        Q[i].block(index, index, 4, 4) = 
+          discount_factor * options.quaternion_weight * 
+          (quat_hessian_i + quat_regularizer_1 + 
+          options.quaternion_regularizer_fraction * quat_regularizer_2 + quat_regularizer_3);
+        discount_factor *= options.c3_options.gamma;
+
+      // double q_min_eigenval = Q_[i].eigenvalues().real().minCoeff();
+      // std::cout << "Q_" << i << " min eigenvalue " <<  q_min_eigenval << std::endl;
+    }
+  }
+  Q[N] = Q[N-1];
+
+  return std::make_pair(Q, R);
+}
 
 
 class SoftWallReactionForce final : public drake::systems::LeafSystem<double> {
@@ -796,6 +854,219 @@ int RunPlateTest() {
   return 0;
 }
 
+
+int RunManualPlateTest() {
+  // Build the plant and scene graph for the pivoting system.
+  DiagramBuilder<double> plant_builder;
+  auto [plant_for_lcs, scene_graph_for_lcs] =
+      AddMultibodyPlantSceneGraph(&plant_builder, 0);
+  Parser parser_for_lcs(&plant_for_lcs, &scene_graph_for_lcs);
+
+  const std::string plate_file_lcs = "examples/resources/plate/plate.sdf";
+	const std::string cube_file_lcs = "examples/resources/plate/cube.sdf";
+
+  parser_for_lcs.AddModels(plate_file_lcs);
+  parser_for_lcs.AddModels(cube_file_lcs);
+
+  plant_for_lcs.Finalize();
+
+  // Build the plant diagram.
+  auto plant_diagram = plant_builder.Build();
+
+  // Build the main diagram.
+  DiagramBuilder<double> builder;
+  auto [plant, scene_graph] = AddMultibodyPlantSceneGraph(&builder, 0.001);
+  Parser parser(&plant, &scene_graph);
+  const std::string plate_file = "examples/resources/plate/plate.sdf";
+	const std::string cube_file = "examples/resources/plate/cube.sdf";
+
+  parser.AddModels(plate_file);
+  parser.AddModels(cube_file);
+
+  plant.Finalize();
+  C3ControllerOptions options = drake::yaml::LoadYamlFile<C3ControllerOptions>(
+      "examples/resources/plate/c3_controller_plate_options.yaml");
+
+  // Create contexts for the plant and LCS factory system.
+  std::unique_ptr<drake::systems::Context<double>> plant_diagram_context =
+      plant_diagram->CreateDefaultContext();
+  auto plant_autodiff =
+      drake::systems::System<double>::ToAutoDiffXd(plant_for_lcs);
+  auto& plant_for_lcs_context = plant_diagram->GetMutableSubsystemContext(
+      plant_for_lcs, plant_diagram_context.get());
+  auto plant_context_autodiff = plant_autodiff->CreateDefaultContext();
+
+
+
+	for (const auto& pname : plant.GetPositionNames()) {
+		std::cout << pname << std::endl;
+	}
+	for (const auto& vname : plant.GetVelocityNames()) {
+		std::cout << vname << std::endl;
+	}
+	
+	
+  Eigen::VectorXd xd(23);
+  //xd << 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
+	xd << 0, 0, 0, 0, 0, 0, 1, 0, 0, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0;
+
+  std::vector<double> x_des = *options.x_des;
+  xd = Eigen::Map<Eigen::VectorXd>(x_des.data(), x_des.size()); 
+
+	std::cout << "xd: " << xd.transpose() << std::endl;
+
+  auto manual_input = builder.AddSystem<ManualInput>(plant, options.lcs_factory_options.N, options.lcs_factory_options.dt);
+
+	builder.Connect(manual_input->get_output_port(),
+									plant.get_actuation_input_port());
+
+
+	Eigen::Vector4d q_vec = xd.segment(5, 4);
+	Eigen::Quaterniond q(q_vec(0), q_vec(1), q_vec(2), q_vec(3));
+	q.normalize();
+  RotationMatrixd R_target(q);
+	RigidTransformd X_WF(R_target, xd.segment(9, 3));
+
+  // Set up Meshcat visualizer.
+  auto meshcat = std::make_shared<drake::geometry::Meshcat>();
+  drake::geometry::MeshcatVisualizerParams params;
+
+  drake::geometry::MeshcatVisualizer<double>::AddToBuilder(
+      &builder, scene_graph, meshcat, std::move(params));
+
+  drake::multibody::meshcat::ContactVisualizer<double>::AddToBuilder(
+      &builder, plant, meshcat,
+      drake::multibody::meshcat::ContactVisualizerParams());
+
+	const double axis_len = 0.2;
+	const double radius = 0.01;
+
+	meshcat->SetObject("target_pose/x_axis", drake::geometry::Cylinder(radius, axis_len), drake::geometry::Rgba(1, 0, 0, 1));
+	RigidTransformd X_FX(
+		RotationMatrixd::MakeYRotation(-M_PI / 2.0),
+		Eigen::Vector3d(axis_len / 2.0, 0, 0));
+	meshcat->SetTransform("target_pose/x_axis", X_WF * X_FX);
+
+	meshcat->SetObject("target_pose/y_axis", drake::geometry::Cylinder(radius, axis_len), drake::geometry::Rgba(0, 1, 0, 1));
+	RigidTransformd X_FY(
+		RotationMatrixd::MakeXRotation(M_PI / 2.0),
+		Eigen::Vector3d(0, axis_len / 2.0, 0));
+	meshcat->SetTransform("target_pose/y_axis", X_WF * X_FY);
+
+	meshcat->SetObject("target_pose/z_axis", drake::geometry::Cylinder(radius, axis_len), drake::geometry::Rgba(0, 0, 1, 1));
+	RigidTransformd X_FZ(
+		RotationMatrixd::Identity(),
+		Eigen::Vector3d(0, 0, axis_len / 2.0));
+	meshcat->SetTransform("target_pose/z_axis", X_WF * X_FZ);
+
+  // Log x and u
+  int state_dim = plant.num_multibody_states(); // size of x = [q; v]
+  auto state_logger = builder.AddSystem<drake::systems::VectorLogSink<double>>(
+      state_dim,
+      0.02
+  );
+  state_logger->set_name("state_logger");
+  builder.Connect(plant.get_state_output_port(), state_logger->get_input_port());
+
+  int input_dim = plant.num_actuators(); // size of x = [q; v]
+  auto input_logger = builder.AddSystem<drake::systems::VectorLogSink<double>>(
+      input_dim,
+      0.02
+  );
+  input_logger->set_name("input_logger");
+  builder.Connect(manual_input->get_output_port(), input_logger->get_input_port());
+
+  // Build the diagram.
+  auto diagram = builder.Build();
+
+  if (!FLAGS_diagram_path.empty())
+    c3::systems::common::DrawAndSaveDiagramGraph(*diagram, FLAGS_diagram_path);
+
+  // Create a default context for the diagram.
+  auto diagram_context = diagram->CreateDefaultContext();
+
+  // Set the initial state of the system.
+  Eigen::VectorXd x0(23);
+	x0 << 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
+
+  // x0 << 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
+  std::vector<double> x_init = *options.x_init;
+  x0 = Eigen::Map<Eigen::VectorXd>(x_init.data(), x_init.size());
+	std::cout << "x0: " << x0.transpose() << std::endl;
+
+	auto& plant_context =
+      diagram->GetMutableSubsystemContext(plant, diagram_context.get());
+  plant.SetPositionsAndVelocities(&plant_context, x0);
+
+
+  // Create and configure the simulator.
+  drake::systems::Simulator<double> simulator(*diagram,
+                                              std::move(diagram_context));
+  simulator.set_target_realtime_rate(0.25);  // Run simulation at 0.25 speed.
+  simulator.Initialize();
+  simulator.AdvanceTo(8.0);  
+
+  const auto& root_context = simulator.get_context();  // const root context after simulation
+  const auto& state_log = state_logger->FindLog(root_context);  // returns const VectorLog<double>&
+  const auto& input_log = input_logger->FindLog(root_context);  // returns const VectorLog<double>&
+
+  Eigen::MatrixXd states = state_log.data();         
+  Eigen::MatrixXd inputs = input_log.data();        
+  std::cout << "state size " << states.rows() << ", " << states.cols() << std::endl;
+  std::cout << "input size " << inputs.rows() << ", " << inputs.cols() << std::endl;
+
+  MatrixXd x_traj = states.middleCols(250, 81);
+  MatrixXd u_traj = states.middleCols(250, 80);
+
+  std::pair<vector<MatrixXd>, vector<MatrixXd>> costs = UpdateQuaternionCosts(options, x_traj, xd);
+  vector<MatrixXd> Q = costs.first;
+  vector<MatrixXd> R = costs.second;
+
+  std::cout << Q.size() << ", " << R.size() << std::endl;
+
+  double x_cost = 0;
+  double pos_cost = 0;
+  double rot_cost = 0;
+  for (int i = 0; i < Q.size() - 1; i++) {
+    VectorXd x_curr = x_traj.col(i);
+    x_cost += (x_curr - xd).transpose() * Q[i] * (x_curr - xd);
+    //std::cout << "i: " << i << ", cost: " << (x_curr - xd).transpose() * Q[i] * (x_curr - xd) << std::endl;
+
+    rot_cost += (x_curr.segment(5, 4) - xd.segment(5, 4)).transpose() * 
+        Q[i].block(5, 5, 4, 4) * (x_curr.segment(5, 4) - xd.segment(5, 4));
+    std::cout << "i: " << i << ", rot cost: " << (x_curr.segment(5, 4) - xd.segment(5, 4)).transpose() * 
+        Q[i].block(5, 5, 4, 4) * (x_curr.segment(5, 4) - xd.segment(5, 4)) << std::endl;
+
+    Eigen::Quaterniond q_curr(x_curr(5), x_curr(6), x_curr(7), x_curr(8));
+    Eigen::Quaterniond q_des(xd(5), xd(6), xd(7), xd(8));
+    Eigen::AngleAxisd angle_axis(q_des * q_curr.inverse());
+    double angle = angle_axis.angle();    
+    std::cout << "angle: " << angle << std::endl << std::endl;
+
+    pos_cost += (x_curr.segment(9, 3) - xd.segment(9, 3)).transpose() * 
+        Q[i].block(9, 9, 3, 3) * (x_curr.segment(9, 3) - xd.segment(9, 3));
+
+  } 
+
+
+  double u_cost = 0;
+  VectorXd u_prev(VectorXd::Zero(5));
+  for (int i = 0; i < R.size(); i++) {
+    VectorXd u_curr = u_traj.col(i);
+    u_cost += (u_curr - u_prev).transpose() * R[i] * (u_curr - u_prev);
+  } 
+
+  std::cout << "x cost: " << x_cost << std::endl;
+  std::cout << "position cost: " << pos_cost << std::endl;
+  std::cout << "rotation cost: " << rot_cost << std::endl;
+  std::cout << "u cost: " << u_cost << std::endl;
+
+
+
+
+  return 0;
+}
+
 std::atomic<bool> g_run{true};
 void SigIntHandler(int) { g_run.store(false); }
 
@@ -1003,6 +1274,9 @@ int main(int argc, char* argv[]) {
   } else if (FLAGS_experiment_type == "plate") {
     std::cout << "Running Plate Test..." << std::endl;
     return RunPlateTest();
+  } else if (FLAGS_experiment_type == "manual") {
+    std::cout << "Running Manual Plate Test..." << std::endl;
+    return RunManualPlateTest();
   } else if (FLAGS_experiment_type == "iC3") {
     std::cout << "Running iC3 Test..." << std::endl;
     return RunPlateTestiC3(lcm);
