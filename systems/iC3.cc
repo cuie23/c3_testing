@@ -247,27 +247,45 @@ iC3::iC3(
         c3_norm(N_) = c3_norm(N_-1); // c3 xsol only has N_ points
         c3_quat_norms.push_back(c3_norm);
         
-        std::cout << "norms: " << c3_norm.transpose() << std::endl;
-
       }
 
       auto output = DoLCSRollout(x0, u_hat, lcs_factory);
       lcs = output.first;
       x_hat = output.second;
 
+      // normalize xhat quaternions
+      // for (int i = 0; i < x_hat.cols(); i++) {
+      //   for (int index : controller_options_.quaternion_indices) {
+      //     x_hat.col(i).segment(index, 4).normalize();
+      //   }
+      // }
+
       all_x_hats.push_back(x_hat);
       all_u_hats.push_back(u_hat);
       all_c3_x.push_back(c3_xs);
 
       // Print costs
-      /*
-      if (iter % 3 == 0) {
+      
+      if (ic3_options_.print_costs && iter % 3 == 2) {
         double x_cost = 0;
         double pos_cost = 0;
         double rot_cost = 0;
 
+        vector<VectorXd> xds;
+        for (int k = 0; k < N_+1; k++) {
+          VectorXd target_k = target[k];
+          for (int j = 0; j < controller_options_.quaternion_indices.size(); j++) {
+              int index = controller_options_.quaternion_indices[j];
+              double norm = c3_quat_norms[j](k);
+              target_k.segment(index, 4) *= norm;
+           }
+           xds.push_back(target_k);
+        }
+
         for (int i = 0; i < N_; i++) {
           VectorXd x_curr = c3_xs.col(i);
+          VectorXd xd = xds[i];
+
           x_cost += (x_curr - xd).transpose() * Q_[i] * (x_curr - xd);
          // std::cout << "i: " << i << ", cost: " << (x_curr - xd).transpose() * Q_[i] * (x_curr - xd) << std::endl;
 
@@ -277,22 +295,24 @@ iC3::iC3(
           std::cout << "i: " << i << ", rot cost: " << (x_curr.segment(5, 4) - xd.segment(5, 4)).transpose() * 
               Q_[i].block(5, 5, 4, 4) * (x_curr.segment(5, 4) - xd.segment(5, 4)) << std::endl;
 
-          // std::cout << Q_[i].block(5, 5, 4, 4) << std::endl;
-          std::cout << "x_curr: " << (x_curr.segment(5, 4)).transpose() << std::endl;
-          // std::cout << "x_des: " << xd.segment(5, 4).transpose() << std::endl;
-          //std::cout << "x_diff: " << (x_curr.segment(5, 4) - xd.segment(5, 4)).transpose() << std::endl;
 
           Eigen::Quaterniond q_curr(x_curr(5), x_curr(6), x_curr(7), x_curr(8));
           Eigen::Quaterniond q_des(xd(5), xd(6), xd(7), xd(8));
           Eigen::AngleAxisd angle_axis(q_des * q_curr.inverse());
           double angle = angle_axis.angle();
 
-          std::cout << "angle: " << angle << std::endl << std::endl;
+          std::cout << "angle: " << angle << std::endl;
 
 
           pos_cost += (x_curr.segment(9, 3) - xd.segment(9, 3)).transpose() * 
               Q_[i].block(9, 9, 3, 3) * (x_curr.segment(9, 3) - xd.segment(9, 3));
+          pos_cost += (x_curr.segment(0, 3) - xd.segment(0, 3)).transpose() * 
+              Q_[i].block(0, 0, 3, 3) * (x_curr.segment(0, 3) - xd.segment(0, 3));
 
+          std::cout << "i: " << i << ", cube pos cost: " << (x_curr.segment(9, 3) - xd.segment(9, 3)).transpose() * 
+              Q_[i].block(9, 9, 3, 3) * (x_curr.segment(9, 3) - xd.segment(9, 3)) << std::endl;
+          std::cout << "i: " << i << ", plate pos cost: " << (x_curr.segment(0, 3) - xd.segment(0, 3)).transpose() * 
+              Q_[i].block(0, 0, 3, 3) * (x_curr.segment(0, 3) - xd.segment(0, 3)) << std::endl << std::endl;
         } 
 
 
@@ -308,7 +328,7 @@ iC3::iC3(
         std::cout << "rotation cost: " << rot_cost << std::endl;
         std::cout << "u cost: " << u_cost << std::endl;
       }
-        */
+        
       
 
     }
