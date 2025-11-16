@@ -229,7 +229,7 @@ std::pair<vector<MatrixXd>, vector<MatrixXd>> UpdateQuaternionCosts(
 
       double discount_factor = 1;
         Q[i].block(index, index, 4, 4) = 
-          discount_factor * options.quaternion_weight * 
+          discount_factor * options.Q_quaternion_weight * 
           (quat_hessian_i + quat_regularizer_1 + 
           options.quaternion_regularizer_fraction * quat_regularizer_2 + quat_regularizer_3);
         discount_factor *= options.c3_options.gamma;

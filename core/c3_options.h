@@ -90,6 +90,7 @@ struct C3Options {
   void Serialize(Archive* a) {
     a->Visit(DRAKE_NVP(warm_start));
     a->Visit(DRAKE_NVP(penalize_input_change));
+
     a->Visit(DRAKE_NVP(end_on_qp_step));
     a->Visit(DRAKE_NVP(scale_lcs));
 

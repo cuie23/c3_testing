@@ -66,7 +66,7 @@ class QuaternionCostTest : public ::testing::Test {
       double discount_factor = 1;
       for (int i = 0; i < controller_options.lcs_factory_options.N + 1; i++) {
         Q[i].block(index, index, 4, 4) =
-            discount_factor * controller_options.quaternion_weight *
+            discount_factor * controller_options.Q_quaternion_weight *
             (quat_hessian_i + quat_regularizer_1 +
              controller_options.quaternion_regularizer_fraction *
                  quat_regularizer_2 +
@@ -299,7 +299,7 @@ TEST_F(QuaternionCostTest, RealizedCostTest) {
     //q_perturbed_vec << 0.987478, 0, 0.659032, 0;
 
 
-    double cost_hessian = controller_options.quaternion_weight * (q_perturbed_vec - qd).transpose() * hessian * (q_perturbed_vec - qd);
+    double cost_hessian = controller_options.Q_quaternion_weight * (q_perturbed_vec - qd).transpose() * hessian * (q_perturbed_vec - qd);
     double cost_regularized = (q_perturbed_vec - qd).transpose() * Q * (q_perturbed_vec - qd);
 
     

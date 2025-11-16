@@ -320,7 +320,7 @@ void C3Controller::UpdateQuaternionCosts(
       double discount_factor = 1;
       for (int i = 0; i < N_ + 1; i++) {
         Q_[i].block(index, index, 4, 4) = 
-          discount_factor * controller_options_.quaternion_weight * 
+          discount_factor * controller_options_.Q_quaternion_weight * 
           (quat_hessian_i + quat_regularizer_1 + 
            controller_options_.quaternion_regularizer_fraction * quat_regularizer_2 + quat_regularizer_3);
         discount_factor *= controller_options_.c3_options.gamma;

@@ -302,7 +302,7 @@ void C3::Solve(const VectorXd& x0) {
   }
 
   if (options_.penalize_input_change) {
-    for (int i = 0; i < N_; ++i) {
+    for (int i = 0; i < N_penalize_input_change_; ++i) {
       // Penalize deviation from previous input solution:  input cost is
       // (u-u_prev)' * R * (u-u_prev).
       input_costs_[i]->UpdateCoefficients(

@@ -157,6 +157,8 @@ class C3 {
   /*! Remove all constraints previously added by AddLinearConstraint */
   void RemoveConstraints();
 
+  void SetNPenalizeInputChange(int N) {N_penalize_input_change_ = N; }
+
   /**
    * @brief Creates cost matrices from the provided C3Options.
    *
@@ -231,6 +233,8 @@ class C3 {
   const int n_lambda_;  // m
   const int n_u_;       // k
   const int n_z_;       // (default) n + m + k
+
+  int N_penalize_input_change_;
 
   bool use_parallelization_in_projection_ = true;
 

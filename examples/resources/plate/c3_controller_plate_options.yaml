@@ -6,7 +6,10 @@ publish_frequency: 100
 state_prediction_joints: []
 
 quaternion_indices: [5]
-quaternion_weight: 1000
+Q_quaternion_weight: 1000
+G_quaternion_weight: 20
+U_quaternion_weight: 100
+
 quaternion_regularizer_fraction: 0.0
 
 x_init: [0, 0, -0.07,
@@ -65,10 +68,10 @@ c3_options:
   w_U: 5 #State Tracking Error, assuming diagonal
 
 
-  q_vector: [500, 500, 10,                # plate pos
+  q_vector: [500, 500, 200,                # plate pos
              10, 10,                    # plate rot
              1, 1, 1, 1,    # cube rot
-             300, 300, 300,           # cube pos              
+             300, 300, 100,           # cube pos              
              1, 1, 1,                # plate velo
              1, 1,                    # plate ang velo
              0.1, 0.1, 0.1,             # cube ang velo

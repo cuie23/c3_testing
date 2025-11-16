@@ -121,7 +121,7 @@ iC3::iC3(
     }
 
     int num_iters = ic3_options_.num_iters;
-    for (int iter = 0; iter < num_iters-1; iter++) {
+    for (int iter = 0; iter < num_iters; iter++) {
 
       std::cout << "iC3 iteration " << iter << std::endl;
       UpdateQuaternionCosts(x_hat, xd, c3_quat_norms);
@@ -196,6 +196,9 @@ iC3::iC3(
         // Update c3_ to match new length
         c3_ = std::make_unique<C3Plus>(shortened_lcs, shortened_costs, shortened_targets,
                                  controller_options_.c3_options);
+
+        int N_penalize = std::max(0, ic3_options_.N_penalize_input_change - i * segment_length);
+        c3_->SetNPenalizeInputChange(N_penalize);
 
         if (i == 0 && iter == 0) {
             // On first iteration just use 0s
@@ -292,8 +295,8 @@ iC3::iC3(
           rot_cost += (x_curr.segment(5, 4) - xd.segment(5, 4)).transpose() * 
               Q_[i].block(5, 5, 4, 4) * (x_curr.segment(5, 4) - xd.segment(5, 4));
           
-          std::cout << "i: " << i << ", rot cost: " << (x_curr.segment(5, 4) - xd.segment(5, 4)).transpose() * 
-              Q_[i].block(5, 5, 4, 4) * (x_curr.segment(5, 4) - xd.segment(5, 4)) << std::endl;
+          // std::cout << "i: " << i << ", rot cost: " << (x_curr.segment(5, 4) - xd.segment(5, 4)).transpose() * 
+          //     Q_[i].block(5, 5, 4, 4) * (x_curr.segment(5, 4) - xd.segment(5, 4)) << std::endl;
 
 
           Eigen::Quaterniond q_curr(x_curr(5), x_curr(6), x_curr(7), x_curr(8));
@@ -301,32 +304,23 @@ iC3::iC3(
           Eigen::AngleAxisd angle_axis(q_des * q_curr.inverse());
           double angle = angle_axis.angle();
 
-          std::cout << "angle: " << angle << std::endl;
+          //std::cout << "angle: " << angle << std::endl;
 
 
           pos_cost += (x_curr.segment(9, 3) - xd.segment(9, 3)).transpose() * 
               Q_[i].block(9, 9, 3, 3) * (x_curr.segment(9, 3) - xd.segment(9, 3));
-          pos_cost += (x_curr.segment(0, 3) - xd.segment(0, 3)).transpose() * 
-              Q_[i].block(0, 0, 3, 3) * (x_curr.segment(0, 3) - xd.segment(0, 3));
+          // pos_cost += (x_curr.segment(0, 3) - xd.segment(0, 3)).transpose() * 
+          //     Q_[i].block(0, 0, 3, 3) * (x_curr.segment(0, 3) - xd.segment(0, 3));
 
-          std::cout << "i: " << i << ", cube pos cost: " << (x_curr.segment(9, 3) - xd.segment(9, 3)).transpose() * 
-              Q_[i].block(9, 9, 3, 3) * (x_curr.segment(9, 3) - xd.segment(9, 3)) << std::endl;
-          std::cout << "i: " << i << ", plate pos cost: " << (x_curr.segment(0, 3) - xd.segment(0, 3)).transpose() * 
-              Q_[i].block(0, 0, 3, 3) * (x_curr.segment(0, 3) - xd.segment(0, 3)) << std::endl << std::endl;
-        } 
-
-
-        double u_cost = 0;
-        VectorXd u_prev(VectorXd::Zero(5));
-        for (int i = 0; i < R_.size(); i++) {
-          VectorXd u_curr = u_hat.col(i);
-          u_cost += (u_curr - u_prev).transpose() * R_[i] * (u_curr - u_prev);
+          // std::cout << "i: " << i << ", cube pos cost: " << (x_curr.segment(9, 3) - xd.segment(9, 3)).transpose() * 
+          //     Q_[i].block(9, 9, 3, 3) * (x_curr.segment(9, 3) - xd.segment(9, 3)) << std::endl;
+          // std::cout << "i: " << i << ", plate pos cost: " << (x_curr.segment(0, 3) - xd.segment(0, 3)).transpose() * 
+          //     Q_[i].block(0, 0, 3, 3) * (x_curr.segment(0, 3) - xd.segment(0, 3)) << std::endl << std::endl;
         } 
 
         std::cout << "x cost: " << x_cost << std::endl;
         std::cout << "position cost: " << pos_cost << std::endl;
         std::cout << "rotation cost: " << rot_cost << std::endl;
-        std::cout << "u cost: " << u_cost << std::endl;
       }
         
       
@@ -489,7 +483,7 @@ iC3::iC3(
 
         double discount_factor = 1;
         Q_[i].block(index, index, 4, 4) = 
-          discount_factor * controller_options_.quaternion_weight * 
+          discount_factor * controller_options_.Q_quaternion_weight * 
           (quat_hessian_i + quat_regularizer_1 + 
           controller_options_.quaternion_regularizer_fraction * quat_regularizer_2 + quat_regularizer_3);
         discount_factor *= controller_options_.c3_options.gamma;
