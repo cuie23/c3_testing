@@ -158,6 +158,13 @@ C3::C3(const LCS& lcs, const CostMatrices& costs,
 
   // Set default solver options
   SetDefaultSolverOptions();
+
+  // for (const auto& binding : prog_.GetAllConstraints()) {
+  //   std::cout << "Constraint: " << binding.evaluator()->get_description() << "\n";
+  //   std::cout << "Lower bound:\n" << binding.evaluator()->lower_bound().transpose() << "\n";
+  //   std::cout << "Upper bound:\n" << binding.evaluator()->upper_bound().transpose() << "\n";
+  // }
+  // std::cout << std::endl << std::endl; 
 }
 
 void C3::SetDefaultSolverOptions() {
@@ -310,7 +317,6 @@ void C3::Solve(const VectorXd& x0) {
           -2 * cost_matrices_.R.at(i) * u_sol_->at(i));
     }
   }
-
   VectorXd delta_init = VectorXd::Zero(n_z_);
   if (options_.delta_option == 1) {
     delta_init.head(n_x_) = x0;

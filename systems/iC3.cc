@@ -114,6 +114,7 @@ iC3::iC3(
     LCS lcs = MakeTimeVaryingLCS(x_hat, u_hat, lcs_factory);
 
     vector<VectorXd> u_sol_for_penalization;
+    vector<VectorXd> u_sol_for_penalization_copy;
 
     vector<VectorXd> c3_quat_norms;
     for (int index : controller_options_.quaternion_indices) {
@@ -177,6 +178,7 @@ iC3::iC3(
       int segment_length = N_ / ic3_options_.num_segments;
       VectorXd x_start = x_hat.col(0);
       int indexer = 0;
+
       for (int i = 0; i < ic3_options_.num_segments; i++) {
         LCS shortened_lcs = ShortenLCSFront(lcs, i * segment_length);
         C3::CostMatrices shortened_costs = ShortenCostsFront(i * segment_length);
@@ -200,6 +202,7 @@ iC3::iC3(
         int N_penalize = std::max(0, ic3_options_.N_penalize_input_change - i * segment_length);
         c3_->SetNPenalizeInputChange(N_penalize);
 
+        u_sol_for_penalization_copy = u_sol_for_penalization;
         if (i == 0 && iter == 0) {
             // On first iteration just use 0s
         } else if (i == 0) { 
@@ -214,10 +217,11 @@ iC3::iC3(
 
 
         if (ic3_options_.add_position_constraints) {
+
           c3_->AddLinearConstraint(A, lower_bound, upper_bound,
                                             ConstraintVariable::STATE);
         }
-                          
+                     
         c3_->Solve(x_start);
 
         x_sol = c3_->GetStateSolution();
@@ -273,6 +277,7 @@ iC3::iC3(
         double x_cost = 0;
         double pos_cost = 0;
         double rot_cost = 0;
+        double u_cost = 0;
 
         vector<VectorXd> xds;
         for (int k = 0; k < N_+1; k++) {
@@ -316,11 +321,17 @@ iC3::iC3(
           //     Q_[i].block(9, 9, 3, 3) * (x_curr.segment(9, 3) - xd.segment(9, 3)) << std::endl;
           // std::cout << "i: " << i << ", plate pos cost: " << (x_curr.segment(0, 3) - xd.segment(0, 3)).transpose() * 
           //     Q_[i].block(0, 0, 3, 3) * (x_curr.segment(0, 3) - xd.segment(0, 3)) << std::endl << std::endl;
+          
+          VectorXd u_curr = u_hat.col(i);
+          VectorXd u_prev = u_sol_for_penalization_copy[i];
+          u_cost += (u_curr - u_prev).transpose() * R_[i] * (u_curr - u_prev);
+          std::cout << "u cost " << i << ": " << (u_curr - u_prev).transpose() * R_[i] * (u_curr - u_prev) << std::endl;;
         } 
 
         std::cout << "x cost: " << x_cost << std::endl;
         std::cout << "position cost: " << pos_cost << std::endl;
         std::cout << "rotation cost: " << rot_cost << std::endl;
+        std::cout << "u cost " << u_cost << std::endl;
       }
         
       
