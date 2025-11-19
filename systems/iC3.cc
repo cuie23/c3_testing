@@ -325,7 +325,7 @@ iC3::iC3(
           VectorXd u_curr = u_hat.col(i);
           VectorXd u_prev = u_sol_for_penalization_copy[i];
           u_cost += (u_curr - u_prev).transpose() * R_[i] * (u_curr - u_prev);
-          std::cout << "u cost " << i << ": " << (u_curr - u_prev).transpose() * R_[i] * (u_curr - u_prev) << std::endl;;
+          //std::cout << "u cost " << i << ": " << (u_curr - u_prev).transpose() * R_[i] * (u_curr - u_prev) << std::endl;;
         } 
 
         std::cout << "x cost: " << x_cost << std::endl;
