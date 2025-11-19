@@ -321,10 +321,18 @@ iC3::iC3(
           //     Q_[i].block(9, 9, 3, 3) * (x_curr.segment(9, 3) - xd.segment(9, 3)) << std::endl;
           // std::cout << "i: " << i << ", plate pos cost: " << (x_curr.segment(0, 3) - xd.segment(0, 3)).transpose() * 
           //     Q_[i].block(0, 0, 3, 3) * (x_curr.segment(0, 3) - xd.segment(0, 3)) << std::endl << std::endl;
-          
+                 
           VectorXd u_curr = u_hat.col(i);
-          VectorXd u_prev = u_sol_for_penalization_copy[i];
-          u_cost += (u_curr - u_prev).transpose() * R_[i] * (u_curr - u_prev);
+          if (i < 5) {
+            std::cout << "u_" << i << ": " << u_curr.transpose() << std::endl;
+          }
+          if (controller_options_.c3_options.penalize_input_change){
+            VectorXd u_prev = u_sol_for_penalization_copy[i];
+            u_cost += (u_curr - u_prev).transpose() * R_[i] * (u_curr - u_prev);
+          } else {
+            u_cost += u_curr.transpose() * R_[i] * u_curr;
+          }
+          
           //std::cout << "u cost " << i << ": " << (u_curr - u_prev).transpose() * R_[i] * (u_curr - u_prev) << std::endl;;
         } 
 
