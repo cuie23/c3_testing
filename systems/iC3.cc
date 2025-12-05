@@ -11,6 +11,7 @@
 #include "common/quaternion_error_hessian.h"
 
 #include "drake/common/text_logging.h"
+#include <drake/multibody/parsing/parser.h>
 
 using drake::multibody::ModelInstanceIndex;
 using drake::systems::BasicVector;
@@ -147,10 +148,10 @@ iC3::iC3(
       // A(1, 1) = 1;
       A(3, 3) = 1;
       A(4, 4) = 1;
-      A(5, 5) = 0;
-      A(10, 10) = 0;
-      A(11, 11) = 0;
-      A(12, 12) = 0;
+      A(5, 5) = 1;
+      A(10, 10) = 1;
+      A(11, 11) = 1;
+      A(12, 12) = 1;
 
       Eigen::VectorXd lower_bound(Eigen::VectorXd::Zero(25));
       Eigen::VectorXd upper_bound(Eigen::VectorXd::Zero(25));
@@ -318,7 +319,7 @@ iC3::iC3(
         c3_quat_norms.push_back(c3_norm);
       }
 
-      auto output = DoLCSRollout(x0, u_hat, lcs_factory);
+      auto output = DoRollout(x0, u_hat, lcs_factory);
 
       lcs = output.first;
       x_hat = output.second;
@@ -474,14 +475,46 @@ iC3::iC3(
   }
 
 
-  // pair<LCS, MatrixXd> iC3::DoRollout(VectorXd x0, MatrixXd u_hat, LCSFactory factory) {
+  pair<LCS, MatrixXd> iC3::DoRollout(VectorXd x0, MatrixXd u_hat, 
+                          LCSFactory factory) {
+    drake::systems::DiagramBuilder<double> builder;
 
-    
+    // TODO: make this less scuffed
+    auto [plant_sim, scene_graph] = drake::multibody::AddMultibodyPlantSceneGraph(&builder, 0.001);
+    drake::multibody::Parser parser(&plant_sim, &scene_graph);
+    const std::string plate_file = "examples/resources/plate/plate.sdf";
+    const std::string cube_file = "examples/resources/plate/cube.sdf";
+    parser.AddModels(plate_file);
+    parser.AddModels(cube_file);
+    plant_sim.Finalize();
 
-  //   LCS output_lcs = MakeTimeVaryingLCS(x_hat, u_hat, factory)
-  //   return std::make_pair(output_lcs, x_hat);
+    auto* broadcaster = builder.AddSystem<InputSource>(u_hat, dt_, N_);
+    builder.Connect(broadcaster->get_output_port(), plant_sim.get_actuation_input_port());
 
-  // }
+    auto diagram = builder.Build();
+    auto context = diagram->CreateDefaultContext();
+
+    auto& plant_context =
+      diagram->GetMutableSubsystemContext(plant_sim, context.get());
+    plant_sim.SetPositionsAndVelocities(&plant_context, x0);
+
+    drake::systems::Simulator<double> simulator(*diagram, std::move(context));
+    simulator.Initialize();
+
+    MatrixXd x_hat(n_x_, N_+1);
+    x_hat.col(0) = x0;
+
+    int idx = 1;
+    for (double t = 0.0; t < N_ * dt_ - 0.001; t += dt_) {
+      simulator.AdvanceTo(t);
+      x_hat.col(idx) = plant_sim.GetPositionsAndVelocities(plant_context);
+      idx++;
+    }
+
+    LCS output_lcs = MakeTimeVaryingLCS(x_hat, u_hat, factory);
+    return std::make_pair(output_lcs, x_hat);
+
+  }
 
   LCS iC3::MakeTimeVaryingLCS(MatrixXd x_hat, MatrixXd u_hat, LCSFactory factory) {
     vector<Eigen::MatrixXd> A;
