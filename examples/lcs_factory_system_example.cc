@@ -128,11 +128,11 @@ class TimedGravityCompGate final : public drake::systems::LeafSystem<double> {
       output->SetFromVector(u_gravity);
 			//std::cout << "tau_g: " << tau_g.transpose() << std::endl;
 			//std::cout << "u_gravity: " << u_gravity.transpose() << std::endl;
-
+      std::cout << t << std::endl;
     } else {
       // After 5 s: controller + gravity compensation
       output->SetFromVector(u_ctrl);
-			//std::cout << u_ctrl.transpose() << std::endl;
+			std::cout << u_ctrl.transpose() << std::endl;
     }
 		//std::cout << u_ctrl.transpose() << std::endl;
 
@@ -727,7 +727,7 @@ int RunPlateTest() {
   // c3_controller->AddLinearConstraint(A, lower_bound, upper_bound,
   //                                    ConstraintVariable::STATE);
 
-  Eigen::VectorXd xd(23);
+  Eigen::VectorXd xd(25);
   //xd << 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
 	xd << 0, 0, 0, 0, 0, 0, 1, 0, 0, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0;
 
@@ -741,11 +741,11 @@ int RunPlateTest() {
 
   // Add a vector-to-timestamped-vector converter.
   auto vector_to_timestamped_vector =
-      builder.AddSystem<Vector2TimestampedVector>(23);
+      builder.AddSystem<Vector2TimestampedVector>(25);
   builder.Connect(plant.get_state_output_port(),
                   vector_to_timestamped_vector->get_input_port_state());
 
-	auto gate = builder.AddSystem<TimedGravityCompGate>(plant, 1.0, 5);
+	auto gate = builder.AddSystem<TimedGravityCompGate>(plant, 1.0, 6);
   // Connect controller inputs.
   builder.Connect(
       vector_to_timestamped_vector->get_output_port_timestamped_state(),
@@ -760,7 +760,7 @@ int RunPlateTest() {
                   c3_controller->get_input_port_target());
 
   // Add and connect the C3 solution input system.
-  auto c3_input = builder.AddSystem<C3Solution2Input>(5);
+  auto c3_input = builder.AddSystem<C3Solution2Input>(6);
   builder.Connect(c3_controller->get_output_port_c3_solution(),
                   c3_input->get_input_port_c3_solution());
 
@@ -772,7 +772,7 @@ int RunPlateTest() {
   // Add a ZeroOrderHold system for state updates.
   auto input_zero_order_hold =
       builder.AddSystem<drake::systems::ZeroOrderHold<double>>(
-          1 / options.publish_frequency, 5);
+          1 / options.publish_frequency, 6);
   builder.Connect(c3_input->get_output_port_c3_input(),
                   input_zero_order_hold->get_input_port());
   builder.Connect(
@@ -783,11 +783,11 @@ int RunPlateTest() {
 
 
 
-	Eigen::Vector4d q_vec = xd.segment(5, 4);
+	Eigen::Vector4d q_vec = xd.segment(6, 4);
 	Eigen::Quaterniond q(q_vec(0), q_vec(1), q_vec(2), q_vec(3));
 	q.normalize();
   RotationMatrixd R_target(q);
-	RigidTransformd X_WF(R_target, xd.segment(9, 3));
+	RigidTransformd X_WF(R_target, xd.segment(10, 3));
 
   // Set up Meshcat visualizer.
   auto meshcat = std::make_shared<drake::geometry::Meshcat>();
@@ -832,7 +832,7 @@ int RunPlateTest() {
   auto diagram_context = diagram->CreateDefaultContext();
 
   // Set the initial state of the system.
-  Eigen::VectorXd x0(23);
+  Eigen::VectorXd x0(25);
 	x0 << 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
 
   // x0 << 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
@@ -847,7 +847,7 @@ int RunPlateTest() {
   // Create and configure the simulator.
   drake::systems::Simulator<double> simulator(*diagram,
                                               std::move(diagram_context));
-  simulator.set_target_realtime_rate(0.25);  // Run simulation at real-time speed.
+  simulator.set_target_realtime_rate(1);  // Run simulation at real-time speed.
   simulator.Initialize();
   simulator.AdvanceTo(120.0);  // Run simulation for 10 seconds.
 
@@ -1085,6 +1085,14 @@ int RunPlateTestiC3(drake::lcm::DrakeLcm& lcm) {
 
   plant_for_lcs.Finalize();
 
+
+	for (const auto& pname : plant_for_lcs.GetPositionNames()) {
+		std::cout << pname << std::endl;
+	}
+	for (const auto& vname : plant_for_lcs.GetVelocityNames()) {
+		std::cout << vname << std::endl;
+	}
+
   // Build the plant diagram.
   auto plant_diagram = plant_builder.Build();
 
@@ -1121,6 +1129,9 @@ int RunPlateTestiC3(drake::lcm::DrakeLcm& lcm) {
   // Load controller options and cost matrices.
   C3ControllerOptions options = drake::yaml::LoadYamlFile<C3ControllerOptions>(
       "examples/resources/plate/c3_controller_plate_options.yaml");
+
+  std::cout << *options.c3_options.penalize_input_change << std::endl;
+
   iC3Options ic3_options = drake::yaml::LoadYamlFile<iC3Options>(
       "examples/resources/plate/iC3_options.yaml");
   C3::CostMatrices cost = C3::CreateCostMatricesFromC3Options(
@@ -1220,7 +1231,7 @@ int RunPlateTestiC3(drake::lcm::DrakeLcm& lcm) {
   auto diagram_context = diagram->CreateDefaultContext();
 
   // Set the initial state of the system.
-  Eigen::VectorXd x0(23);
+  Eigen::VectorXd x0(25);
 	x0 << 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
 
   // x0 << 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;

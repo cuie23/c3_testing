@@ -1,7 +1,7 @@
-num_iters: 20
+num_iters: 12
 add_position_constraints: true
 
-num_segments: 20
-N_penalize_input_change: 80
+num_segments: 5
+N_penalize_input_change: 100
 
 print_costs: true

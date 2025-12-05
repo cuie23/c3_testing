@@ -52,7 +52,9 @@ LCSFactory::LCSFactory(
       n_u_(plant_.num_actuators()),
       mu_(options.mu),
       frictionless_(contact_model_ == ContactModel::kFrictionlessSpring),
-      dt_(options.dt) {}
+      dt_(options.dt) {
+        std::cout << "factory dt: " << dt_ << std::endl;
+      }
 
 void LCSFactory::ComputeContactJacobian(VectorXd& phi, MatrixXd& Jn,
                                         MatrixXd& Jt) {

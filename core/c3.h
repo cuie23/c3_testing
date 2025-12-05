@@ -198,6 +198,13 @@ class C3 {
   std::vector<Eigen::VectorXd> GetInputSolution() { return *u_sol_; }
   std::vector<Eigen::VectorXd> GetDualDeltaSolution() { return *delta_sol_; }
   std::vector<Eigen::VectorXd> GetDualWSolution() { return *w_sol_; }
+  std::vector<Eigen::VectorXd> GetEtaSolution() { return *eta_sol_; }
+
+  void set_warm_starts(std::vector<Eigen::VectorXd> x_sol, 
+                      std::vector<Eigen::VectorXd> u_sol, 
+                      std::vector<Eigen::VectorXd> lambda_sol);
+                      
+  void set_eta_warm_start(std::vector<Eigen::VectorXd> eta) { warm_start_eta_init_ = eta; }
 
   void set_u_sol(std::vector<Eigen::VectorXd> u_sol_new) {
     u_sol_ = std::make_unique<std::vector<Eigen::VectorXd>>(u_sol_new);
@@ -222,11 +229,18 @@ class C3 {
      const std::vector<Eigen::VectorXd>& x_des, const C3Options& options,
      int z_size);
 
+  std::vector<std::vector<Eigen::VectorXd>> warm_start_eta_;
   std::vector<std::vector<Eigen::VectorXd>> warm_start_delta_;
   std::vector<std::vector<Eigen::VectorXd>> warm_start_binary_;
   std::vector<std::vector<Eigen::VectorXd>> warm_start_x_;
   std::vector<std::vector<Eigen::VectorXd>> warm_start_lambda_;
   std::vector<std::vector<Eigen::VectorXd>> warm_start_u_;
+
+  std::vector<Eigen::VectorXd> warm_start_x_init_;
+  std::vector<Eigen::VectorXd> warm_start_lambda_init_;
+  std::vector<Eigen::VectorXd> warm_start_u_init_;
+  std::vector<Eigen::VectorXd> warm_start_eta_init_;
+
   bool warm_start_;
   const int N_;
   const int n_x_;       // n
@@ -342,6 +356,7 @@ class C3 {
   std::unique_ptr<std::vector<Eigen::VectorXd>> x_sol_;
   std::unique_ptr<std::vector<Eigen::VectorXd>> lambda_sol_;
   std::unique_ptr<std::vector<Eigen::VectorXd>> u_sol_;
+  std::unique_ptr<std::vector<Eigen::VectorXd>> eta_sol_;
 
   std::unique_ptr<std::vector<Eigen::VectorXd>> z_sol_;
   std::unique_ptr<std::vector<Eigen::VectorXd>>

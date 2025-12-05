@@ -51,8 +51,8 @@ class C3Plus final : public C3 {
       const Eigen::MatrixXd& H, const Eigen::VectorXd& c,
       const int admm_iteration, const int& warm_start_index = -1) override;
 
- protected:
-  std::vector<std::vector<Eigen::VectorXd>> warm_start_eta_;
+
+
 
  private:
   void StoreQPResults(const drake::solvers::MathematicalProgramResult& result,
@@ -61,7 +61,6 @@ class C3Plus final : public C3 {
   void SetInitialGuessQP(const Eigen::VectorXd& x0,
                          int admm_iteration) override;
   std::vector<drake::solvers::VectorXDecisionVariable> eta_;
-  std::unique_ptr<std::vector<Eigen::VectorXd>> eta_sol_;
 
   // Store the following constraint η = E * x + F * λ + H * u + c
   std::vector<drake::solvers::LinearEqualityConstraint*> eta_constraints_;

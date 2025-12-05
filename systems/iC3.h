@@ -40,6 +40,8 @@ private:
   
   // Given an initial x and u trajectory, return x rollout out using lcs
   pair<LCS, MatrixXd> DoLCSRollout(VectorXd x0, MatrixXd u_hat, LCSFactory factory);
+  pair<LCS, MatrixXd> DoRollout(VectorXd x0, MatrixXd u_hat, LCSFactory factory);
+
   LCS MakeTimeVaryingLCS(MatrixXd x_hat, MatrixXd u_hat, LCSFactory factory);
 
   // removes num_timesteps_to_remove timesteps from the front of the LCS

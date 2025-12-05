@@ -43,6 +43,11 @@ cc_binary(
     data = [
         ":example_data",
     ],
+
+    linkopts = [
+        "-L/lib/x86_64-linux-gnu",
+        "-lopenblas",
+    ],
     deps = [
         "//core:c3",
         "//core:c3_cartpole_problem",

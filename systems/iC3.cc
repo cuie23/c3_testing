@@ -43,6 +43,10 @@ iC3::iC3(
   n_x_ = n_q_ + n_v_;
   dt_ = controller_options_.lcs_factory_options.dt;
 
+  std::cout << "nq: " << n_q_ << std::endl;
+  std::cout << "nv: " << n_v_ << std::endl;
+  std::cout << "nu: " << n_u_ << std::endl;
+
   // Determine the size of lambda based on the contact model
   n_lambda_ = multibody::LCSFactory::GetNumContactVariables(
       controller_options_.lcs_factory_options);
@@ -90,7 +94,7 @@ iC3::iC3(
     // ith column = ith timestep
     MatrixXd x_hat = x0.replicate(1, N_+1);
     MatrixXd u_hat(Eigen::MatrixXd::Zero(n_u_, N_));
-    MatrixXd c3_xs = MatrixXd::Zero(n_x_, N_);
+    MatrixXd c3_xs = MatrixXd::Zero(n_x_, N_ + 1);
 
     // Set initial guess to something kinda reasonable
     // TODO: make this a yaml option or use drake slerp
@@ -113,18 +117,23 @@ iC3::iC3(
 
     LCS lcs = MakeTimeVaryingLCS(x_hat, u_hat, lcs_factory);
 
-    vector<VectorXd> u_sol_for_penalization;
+    vector<VectorXd> x_sol_warm_start;
+    vector<VectorXd> lambda_sol_warm_start;
+    vector<VectorXd> u_sol_warm_start;
+    vector<VectorXd> eta_sol_warm_start;
+
     vector<VectorXd> u_sol_for_penalization_copy;
 
     vector<VectorXd> c3_quat_norms;
     for (int index : controller_options_.quaternion_indices) {
-      c3_quat_norms.push_back(VectorXd::Ones(N_));
+      c3_quat_norms.push_back(VectorXd::Ones(N_ + 1));
     }
 
     int num_iters = ic3_options_.num_iters;
     for (int iter = 0; iter < num_iters; iter++) {
 
       std::cout << "iC3 iteration " << iter << std::endl;
+
       UpdateQuaternionCosts(x_hat, xd, c3_quat_norms);
 
       MatrixXd Q_test = Q_[6];
@@ -133,44 +142,46 @@ iC3::iC3(
       // std::cout << cooked << std::endl; 
 
       // Add actuation/position limits
-      Eigen::MatrixXd A = Eigen::MatrixXd::Zero(23, 23);
+      Eigen::MatrixXd A = Eigen::MatrixXd::Zero(25, 25);
       // A(0, 0) = 1;
       // A(1, 1) = 1;
-      A(2, 2) = 1;
       A(3, 3) = 1;
       A(4, 4) = 1;
-      Eigen::VectorXd lower_bound(Eigen::VectorXd::Zero(23));
-      Eigen::VectorXd upper_bound(Eigen::VectorXd::Zero(23));
+      A(5, 5) = 0;
+      A(10, 10) = 0;
+      A(11, 11) = 0;
+      A(12, 12) = 0;
+
+      Eigen::VectorXd lower_bound(Eigen::VectorXd::Zero(25));
+      Eigen::VectorXd upper_bound(Eigen::VectorXd::Zero(25));
 
       // Plate position constraints
       lower_bound[0] = -0.2;
       lower_bound[1] = -0.2;
-      lower_bound[2] = -1; 
+      lower_bound[2] = -0.2; 
       upper_bound[0] = 0.2;
       upper_bound[1] = 0.2;
       upper_bound[2] = 0.5;
       
       // Plate rotation constraints
-      lower_bound[3] = -0.5;
-      lower_bound[4] = -0.5;
-      upper_bound[3] = 0.5;
-      upper_bound[4] = 0.5;
+      lower_bound[3] = -0.4;
+      lower_bound[4] = -0.4;
+      upper_bound[3] = 0.4;
+      upper_bound[4] = 0.4;
 
-      // Actuation limits
-      Eigen::MatrixXd A_u = Eigen::MatrixXd::Zero(5, 5);
-      A_u(0, 0) = 1;
-      A_u(1, 1) = 1;
-      A_u(2, 2) = 1;
-      Eigen::VectorXd lower_bound_u(Eigen::VectorXd::Zero(5));
-      Eigen::VectorXd upper_bound_u(Eigen::VectorXd::Zero(5));
-      lower_bound_u << -20, -20, -20, 0, 0;
-      upper_bound_u << 20, 20, 40, 0, 0; // plate + block is ~10 N 
-      // c3_->AddLinearConstraint(A_u, lower_bound_u, upper_bound_u,
-      //                                   ConstraintVariable::INPUT);
-                 
+      lower_bound[10] = -0.5;
+      lower_bound[11] = -0.5;
+      lower_bound[12] = -0.3;
+      upper_bound[10] = 0.5;
+      upper_bound[11] = 0.5;
+      upper_bound[12] = 1;
+
+
       vector<Eigen::VectorXd> x_sol;
       vector<Eigen::VectorXd> u_sol;
-        
+      vector<Eigen::VectorXd> lambda_sol;
+      vector<Eigen::VectorXd> eta_sol;
+
       std::vector<VectorXd> target =
         std::vector<VectorXd>(N_ + 1, xd);
 
@@ -202,37 +213,85 @@ iC3::iC3(
         int N_penalize = std::max(0, ic3_options_.N_penalize_input_change - i * segment_length);
         c3_->SetNPenalizeInputChange(N_penalize);
 
-        u_sol_for_penalization_copy = u_sol_for_penalization;
+        u_sol_for_penalization_copy = u_sol_warm_start;
         if (i == 0 && iter == 0) {
-            // On first iteration just use 0s
+          // On first iteration just use 0s
+          vector<VectorXd> x_sol_keep;
+          vector<VectorXd> lambda_sol_keep;
+          vector<VectorXd> u_sol_keep;
+          vector<VectorXd> eta_sol_keep;
+
+          for (int q = 0; q < N_; q++) {
+            x_sol_keep.push_back(VectorXd::Zero(n_x_));
+            lambda_sol_keep.push_back(VectorXd::Zero(n_lambda_));
+            u_sol_keep.push_back(VectorXd::Zero(n_u_));
+            eta_sol_keep.push_back(VectorXd::Zero(n_lambda_));
+          }            
+          x_sol_keep.push_back(VectorXd::Zero(n_x_));
+
+          c3_->set_warm_starts(x_sol_keep, u_sol_keep, lambda_sol_keep);
+          c3_->set_eta_warm_start(eta_sol_keep);
+          c3_->set_u_sol(u_sol_keep);
+
         } else if (i == 0) { 
           // Take from previous iC3 iteration
-          vector<VectorXd> u_sol_keep = u_sol_for_penalization;
-          c3_->set_u_sol(u_sol_keep);
-          u_sol_for_penalization.clear();
+          vector<VectorXd> x_warm_start;
+          for (int i = 0; i < x_hat.cols(); i++) {
+          x_warm_start.push_back(x_hat.col(i));
+          }
+          std::cout << x_warm_start[0].size() << std::endl;
+          std::cout << lambda_sol_warm_start[0].size() << std::endl;
+          std::cout << u_sol_warm_start[0].size() << std::endl;
+          std::cout << eta_sol_warm_start[0].size() << std::endl;
+
+          c3_->set_warm_starts(x_warm_start, u_sol_warm_start, lambda_sol_warm_start);
+          c3_->set_eta_warm_start(eta_sol_warm_start);
+          c3_->set_u_sol(u_sol_warm_start);
+                  
+          x_sol_warm_start.clear();
+          lambda_sol_warm_start.clear();
+          u_sol_warm_start.clear();
+          eta_sol_warm_start.clear();
+
         } else {
+          vector<VectorXd> x_sol_keep(x_sol.begin() + segment_length, x_sol.end());
+          vector<VectorXd> lambda_sol_keep(lambda_sol.begin() + segment_length, lambda_sol.end());
           vector<VectorXd> u_sol_keep(u_sol.begin() + segment_length, u_sol.end());
+          vector<VectorXd> eta_sol_keep(eta_sol.begin() + segment_length, eta_sol.end());
+
+          c3_->set_warm_starts(x_sol_keep, u_sol_keep, lambda_sol_keep);
+          c3_->set_eta_warm_start(eta_sol_keep);          
           c3_->set_u_sol(u_sol_keep);
         } 
 
-
         if (ic3_options_.add_position_constraints) {
-
           c3_->AddLinearConstraint(A, lower_bound, upper_bound,
                                             ConstraintVariable::STATE);
         }
-                     
+
         c3_->Solve(x_start);
 
-        x_sol = c3_->GetStateSolution();
+        vector<VectorXd> x_sol_raw = c3_->GetStateSolution();
         u_sol = c3_->GetInputSolution();
+        lambda_sol = c3_->GetForceSolution();
+        eta_sol = c3_->GetEtaSolution();
+
+        VectorXd last = x_sol_raw.back();
+        x_sol.clear();
+        x_sol.reserve(x_sol_raw.size() + 1);
+        x_sol = x_sol_raw;
+        x_sol.push_back(last);
+
 
         // Only keep segment_length x's and u's
         for (int j = 0; j < segment_length; j++) {
           c3_xs.col(indexer) = x_sol[j];
           u_hat.col(indexer) = u_sol[j];
           indexer++;
-          u_sol_for_penalization.push_back(u_sol[j]);
+          x_sol_warm_start.push_back(x_sol[j]);
+          lambda_sol_warm_start.push_back(lambda_sol[j]);
+          u_sol_warm_start.push_back(u_sol[j]);
+          eta_sol_warm_start.push_back(eta_sol[j]);
         }
         if (i < ic3_options_.num_segments - 1) {
           x_start = x_sol[segment_length];
@@ -241,22 +300,26 @@ iC3::iC3(
       for (int i = indexer; i < N_; i++) {
         c3_xs.col(i) = x_sol[i - indexer];
         u_hat.col(i) = u_sol[i - indexer];
-        u_sol_for_penalization.push_back(u_sol[i - indexer]);
+        x_sol_warm_start.push_back(x_sol[i - indexer]);
+        lambda_sol_warm_start.push_back(lambda_sol[i - indexer]);
+        u_sol_warm_start.push_back(u_sol[i - indexer]);
+        eta_sol_warm_start.push_back(eta_sol[i - indexer]);
       } 
+      x_sol_warm_start.push_back(x_sol[N_]);
+      c3_xs.col(N_) = x_sol[N_];
 
       // Update norms of c3 quaternion outputs
       c3_quat_norms.clear();
       for (int index : controller_options_.quaternion_indices) {
         VectorXd c3_norm(N_+1);
-        for (int i = 0; i < N_; i++) {
+        for (int i = 0; i < N_ + 1; i++) {
           c3_norm(i) = c3_xs.col(i).segment(index, 4).norm();
         } 
-        c3_norm(N_) = c3_norm(N_-1); // c3 xsol only has N_ points
         c3_quat_norms.push_back(c3_norm);
-        
       }
 
       auto output = DoLCSRollout(x0, u_hat, lcs_factory);
+
       lcs = output.first;
       x_hat = output.second;
 
@@ -273,7 +336,7 @@ iC3::iC3(
 
       // Print costs
       
-      if (ic3_options_.print_costs && iter % 3 == 2) {
+      if (ic3_options_.print_costs && iter % 1 == 0) {
         double x_cost = 0;
         double pos_cost = 0;
         double rot_cost = 0;
@@ -297,23 +360,24 @@ iC3::iC3(
           x_cost += (x_curr - xd).transpose() * Q_[i] * (x_curr - xd);
          // std::cout << "i: " << i << ", cost: " << (x_curr - xd).transpose() * Q_[i] * (x_curr - xd) << std::endl;
 
-          rot_cost += (x_curr.segment(5, 4) - xd.segment(5, 4)).transpose() * 
-              Q_[i].block(5, 5, 4, 4) * (x_curr.segment(5, 4) - xd.segment(5, 4));
+          rot_cost += (x_curr.segment(6, 4) - xd.segment(6, 4)).transpose() * 
+              Q_[i].block(6, 6, 4, 4) * (x_curr.segment(6, 4) - xd.segment(6, 4));
           
           // std::cout << "i: " << i << ", rot cost: " << (x_curr.segment(5, 4) - xd.segment(5, 4)).transpose() * 
           //     Q_[i].block(5, 5, 4, 4) * (x_curr.segment(5, 4) - xd.segment(5, 4)) << std::endl;
 
 
-          Eigen::Quaterniond q_curr(x_curr(5), x_curr(6), x_curr(7), x_curr(8));
-          Eigen::Quaterniond q_des(xd(5), xd(6), xd(7), xd(8));
-          Eigen::AngleAxisd angle_axis(q_des * q_curr.inverse());
-          double angle = angle_axis.angle();
+          // Eigen::Quaterniond q_curr(x_curr(6), x_curr(7), x_curr(8), x_curr(9));
+          // Eigen::Quaterniond q_des(xd(6), xd(7), xd(8), xd(9));
+
+          // Eigen::AngleAxisd angle_axis(q_des * q_curr.inverse());
+          // double angle = angle_axis.angle();
 
           //std::cout << "angle: " << angle << std::endl;
 
 
-          pos_cost += (x_curr.segment(9, 3) - xd.segment(9, 3)).transpose() * 
-              Q_[i].block(9, 9, 3, 3) * (x_curr.segment(9, 3) - xd.segment(9, 3));
+          pos_cost += (x_curr.segment(10, 3) - xd.segment(10, 3)).transpose() * 
+              Q_[i].block(10, 10, 3, 3) * (x_curr.segment(10, 3) - xd.segment(10, 3));
           // pos_cost += (x_curr.segment(0, 3) - xd.segment(0, 3)).transpose() * 
           //     Q_[i].block(0, 0, 3, 3) * (x_curr.segment(0, 3) - xd.segment(0, 3));
 
@@ -322,11 +386,13 @@ iC3::iC3(
           // std::cout << "i: " << i << ", plate pos cost: " << (x_curr.segment(0, 3) - xd.segment(0, 3)).transpose() * 
           //     Q_[i].block(0, 0, 3, 3) * (x_curr.segment(0, 3) - xd.segment(0, 3)) << std::endl << std::endl;
                  
+          VectorXd x_curr_ret = x_hat.col(i);
           VectorXd u_curr = u_hat.col(i);
+
           if (i < 5) {
-            std::cout << "u_" << i << ": " << u_curr.transpose() << std::endl;
+            //std::cout << "x_" << i << ": " << x_curr_ret.transpose() << std::endl;
           }
-          if (controller_options_.c3_options.penalize_input_change){
+          if (*controller_options_.c3_options.penalize_input_change){
             VectorXd u_prev = u_sol_for_penalization_copy[i];
             u_cost += (u_curr - u_prev).transpose() * R_[i] * (u_curr - u_prev);
           } else {
@@ -341,7 +407,7 @@ iC3::iC3(
         std::cout << "rotation cost: " << rot_cost << std::endl;
         std::cout << "u cost " << u_cost << std::endl;
       }
-        
+
       
 
     }
@@ -396,7 +462,7 @@ iC3::iC3(
 
       // Do one rollout step
       VectorXd u_k = u_hat.col(k);
-      x_next = lcs.Simulate(x_curr, u_k, true);
+      x_next = lcs.Simulate(x_curr, u_k, false);
 
       x_hat.col(k+1) = x_next;
       x_curr = x_next;
@@ -406,6 +472,16 @@ iC3::iC3(
     return std::make_pair(output_lcs, x_hat);
 
   }
+
+
+  // pair<LCS, MatrixXd> iC3::DoRollout(VectorXd x0, MatrixXd u_hat, LCSFactory factory) {
+
+    
+
+  //   LCS output_lcs = MakeTimeVaryingLCS(x_hat, u_hat, factory)
+  //   return std::make_pair(output_lcs, x_hat);
+
+  // }
 
   LCS iC3::MakeTimeVaryingLCS(MatrixXd x_hat, MatrixXd u_hat, LCSFactory factory) {
     vector<Eigen::MatrixXd> A;

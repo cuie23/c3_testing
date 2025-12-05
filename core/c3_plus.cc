@@ -29,6 +29,16 @@ C3Plus::C3Plus(const LCS& lcs, const CostMatrices& costs,
     z_.at(i).push_back(eta_.back());
   }
 
+  if (warm_start_) {
+    warm_start_eta_.resize(options_.admm_iter + 1);
+    for (int iter = 0; iter < options_.admm_iter + 1; ++iter) {
+      warm_start_eta_[iter].resize(N_);
+      for (int i = 0; i < N_; ++i) {
+        warm_start_eta_[iter][i] = VectorXd::Zero(n_lambda_);
+      }
+    }
+  }
+
   // Add eta equality constraints η = E * x + F * λ + H * u + c
   MatrixXd EtaLinEq(n_lambda_, n_x_ + 2 * n_lambda_ + n_u_);
   EtaLinEq.block(0, n_x_ + n_lambda_ + n_u_, n_lambda_, n_lambda_) =
@@ -67,14 +77,20 @@ void C3Plus::UpdateLCS(const LCS& lcs) {
 
 void C3Plus::SetInitialGuessQP(const Eigen::VectorXd& x0, int admm_iteration) {
   C3::SetInitialGuessQP(x0, admm_iteration);
-  if (!warm_start_ || admm_iteration == 0)
-    return;  // No warm start for the first iteration
-  int index = solve_time_ / lcs_.dt();
-  double weight = (solve_time_ - index * lcs_.dt()) / lcs_.dt();
-  for (int i = 0; i < N_ - 1; ++i) {
-    prog_.SetInitialGuess(
-        eta_[i], (1 - weight) * warm_start_eta_[admm_iteration - 1][i] +
-                     weight * warm_start_eta_[admm_iteration - 1][i + 1]);
+  if (!warm_start_) return;
+
+  if (admm_iteration == 0) {
+    for (int i = 0; i < N_; ++i) {
+      prog_.SetInitialGuess(eta_[i], warm_start_eta_init_[i]);
+    }
+  } else {    
+    int index = solve_time_ / lcs_.dt();
+    double weight = (solve_time_ - index * lcs_.dt()) / lcs_.dt();
+    for (int i = 0; i < N_ - 1; ++i) {
+      prog_.SetInitialGuess(
+          eta_[i], (1 - weight) * warm_start_eta_[admm_iteration - 1][i] +
+                      weight * warm_start_eta_[admm_iteration - 1][i + 1]);
+    }
   }
 }
 

@@ -158,13 +158,7 @@ C3::C3(const LCS& lcs, const CostMatrices& costs,
 
   // Set default solver options
   SetDefaultSolverOptions();
-
-  // for (const auto& binding : prog_.GetAllConstraints()) {
-  //   std::cout << "Constraint: " << binding.evaluator()->get_description() << "\n";
-  //   std::cout << "Lower bound:\n" << binding.evaluator()->lower_bound().transpose() << "\n";
-  //   std::cout << "Upper bound:\n" << binding.evaluator()->upper_bound().transpose() << "\n";
-  // }
-  // std::cout << std::endl << std::endl; 
+ 
 }
 
 void C3::SetDefaultSolverOptions() {
@@ -210,6 +204,16 @@ C3::CostMatrices C3::CreateCostMatricesFromC3Options(const C3Options& options,
   Q.push_back(discount_factor * options.Q);
 
   return CostMatrices(Q, R, G, U);  // Initialize the cost matrices.
+}
+
+void C3::set_warm_starts(std::vector<Eigen::VectorXd> x_sol, 
+                    std::vector<Eigen::VectorXd> u_sol, 
+                    std::vector<Eigen::VectorXd> lambda_sol) {
+
+  warm_start_x_init_ = x_sol;
+  warm_start_u_init_ = u_sol;
+  warm_start_lambda_init_ = lambda_sol;
+  
 }
 
 void C3::ScaleLCS() {
@@ -335,7 +339,7 @@ void C3::Solve(const VectorXd& x0) {
   }
 
   *z_fin_ = SolveQP(x0, G, WD, options_.admm_iter, true);
-
+  
   *w_sol_ = w;
   *delta_sol_ = delta;
 
@@ -375,6 +379,7 @@ void C3::ADMMStep(const VectorXd& x0, vector<VectorXd>* delta,
   }
 
   vector<VectorXd> z = SolveQP(x0, *G, WD, admm_iteration, false);
+ 
 
   vector<VectorXd> ZW(N_, VectorXd::Zero(n_z_));
   for (int i = 0; i < N_; ++i) {
@@ -396,45 +401,60 @@ void C3::ADMMStep(const VectorXd& x0, vector<VectorXd>* delta,
 
 void C3::SetInitialGuessQP(const Eigen::VectorXd& x0, int admm_iteration) {
   prog_.SetInitialGuess(x_[0], x0);
-  if (!warm_start_ || admm_iteration == 0)
-    return;  // No warm start for the first iteration
-  int index = solve_time_ / lcs_.dt();
-  double weight = (solve_time_ - index * lcs_.dt()) / lcs_.dt();
-  for (int i = 0; i < N_ - 1; ++i) {
-    prog_.SetInitialGuess(
-        x_[i], (1 - weight) * warm_start_x_[admm_iteration - 1][i] +
-                   weight * warm_start_x_[admm_iteration - 1][i + 1]);
-    prog_.SetInitialGuess(
-        lambda_[i], (1 - weight) * warm_start_lambda_[admm_iteration - 1][i] +
-                        weight * warm_start_lambda_[admm_iteration - 1][i + 1]);
-    prog_.SetInitialGuess(
-        u_[i], (1 - weight) * warm_start_u_[admm_iteration - 1][i] +
-                   weight * warm_start_u_[admm_iteration - 1][i + 1]);
+
+  if (!warm_start_) return;
+
+  if (warm_start_ && admm_iteration == 0) { // TODO: currently relies on iC3 setting warm starts
+    for (int i = 0; i < N_; ++i) {
+      prog_.SetInitialGuess(x_[i], warm_start_x_init_[i]);
+      prog_.SetInitialGuess(lambda_[i], warm_start_lambda_init_[i]);
+      prog_.SetInitialGuess(u_[i], warm_start_u_init_[i]);
+    }
+    prog_.SetInitialGuess(x_[N_], warm_start_x_init_[N_]);
+
+  } else if (admm_iteration != 0) {
+    int index = solve_time_ / lcs_.dt();
+    double weight = (solve_time_ - index * lcs_.dt()) / lcs_.dt();
+
+    for (int i = 0; i < N_-1; ++i) {
+      prog_.SetInitialGuess(
+          x_[i], (1 - weight) * warm_start_x_[admm_iteration - 1][i] +
+                    weight * warm_start_x_[admm_iteration - 1][i + 1]);
+      prog_.SetInitialGuess(
+          lambda_[i], (1 - weight) * warm_start_lambda_[admm_iteration - 1][i] +
+                          weight * warm_start_lambda_[admm_iteration - 1][i + 1]);
+      prog_.SetInitialGuess(
+          u_[i], (1 - weight) * warm_start_u_[admm_iteration - 1][i] +
+                    weight * warm_start_u_[admm_iteration - 1][i + 1]);
+    }
+    prog_.SetInitialGuess(x_[N_], warm_start_x_[admm_iteration - 1][N_]);
   }
-  prog_.SetInitialGuess(x_[N_], warm_start_x_[admm_iteration - 1][N_]);
+  
 }
 
 void C3::StoreQPResults(const MathematicalProgramResult& result,
                         int admm_iteration, bool is_final_solve) {
+
+
   for (int i = 0; i < N_; ++i) {
     if (is_final_solve) {
       x_sol_->at(i) = result.GetSolution(x_[i]);
       lambda_sol_->at(i) = result.GetSolution(lambda_[i]);
       u_sol_->at(i) = result.GetSolution(u_[i]);
     }
+
     z_sol_->at(i).segment(0, n_x_) = result.GetSolution(x_[i]);
     z_sol_->at(i).segment(n_x_, n_lambda_) = result.GetSolution(lambda_[i]);
     z_sol_->at(i).segment(n_x_ + n_lambda_, n_u_) = result.GetSolution(u_[i]);
-  }
 
-  if (!warm_start_)
-    return;  // No warm start, so no need to update warm start parameters
-  for (int i = 0; i < N_ + 1; ++i) {
-    if (i < N_) {
+    if (warm_start_) {
+      // update warm start parameters
       warm_start_x_[admm_iteration][i] = result.GetSolution(x_[i]);
       warm_start_lambda_[admm_iteration][i] = result.GetSolution(lambda_[i]);
       warm_start_u_[admm_iteration][i] = result.GetSolution(u_[i]);
     }
+  }
+  if (warm_start_) {
     warm_start_x_[admm_iteration][N_] = result.GetSolution(x_[N_]);
   }
 }
@@ -442,6 +462,7 @@ void C3::StoreQPResults(const MathematicalProgramResult& result,
 vector<VectorXd> C3::SolveQP(const VectorXd& x0, const vector<MatrixXd>& G,
                              const vector<VectorXd>& WD, int admm_iteration,
                              bool is_final_solve) {
+  drake::log()->trace("C3::SolveQP Adding augmented costs(G).");
   // Add or update augmented costs
   if (augmented_costs_.size() == 0) {
     for (int i = 0; i < N_; ++i)
@@ -455,20 +476,19 @@ vector<VectorXd> C3::SolveQP(const VectorXd& x0, const vector<MatrixXd>& G,
       augmented_costs_[i]->UpdateCoefficients(2 * G.at(i),
                                               -2 * G.at(i) * WD.at(i));
   }
-
   SetInitialGuessQP(x0, admm_iteration);
-
+  
   MathematicalProgramResult result = osqp_.Solve(prog_);
 
   if (!result.is_success()) {
     drake::log()->warn("C3::SolveQP failed to solve the QP with status: {}",
                        result.get_solution_result());
   }
-
   StoreQPResults(result, admm_iteration, is_final_solve);
 
   return *z_sol_;
 }
+
 
 vector<VectorXd> C3::SolveProjection(const vector<MatrixXd>& U,
                                      vector<VectorXd>& WZ, int admm_iteration) {
@@ -503,7 +523,6 @@ vector<VectorXd> C3::SolveProjection(const vector<MatrixXd>& U,
                                 lcs_.H()[i], lcs_.c()[i], admm_iteration, -1);
     }
   }
-
   return deltaProj;
 }
 
