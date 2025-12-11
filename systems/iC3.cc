@@ -1,6 +1,7 @@
 #include "iC3.h"
 
 #include <cmath>
+#include <chrono>
 
 #include <Eigen/Dense>
 
@@ -139,44 +140,63 @@ iC3::iC3(
 
       MatrixXd Q_test = Q_[6];
 
-      // MatrixXd cooked = (Q_[6] - Q_test);
-      // std::cout << cooked << std::endl; 
-
       // Add actuation/position limits
-      Eigen::MatrixXd A = Eigen::MatrixXd::Zero(25, 25);
-      // A(0, 0) = 1;
-      // A(1, 1) = 1;
+      Eigen::MatrixXd A = Eigen::MatrixXd::Zero(23, 23);
+      A(0, 0) = 1;
+      A(1, 1) = 1;
       A(3, 3) = 1;
       A(4, 4) = 1;
-      A(5, 5) = 1;
+      //A(5, 5) = 1;
       A(10, 10) = 1;
       A(11, 11) = 1;
       A(12, 12) = 1;
 
-      Eigen::VectorXd lower_bound(Eigen::VectorXd::Zero(25));
-      Eigen::VectorXd upper_bound(Eigen::VectorXd::Zero(25));
+      Eigen::VectorXd lower_bound(Eigen::VectorXd::Zero(23));
+      Eigen::VectorXd upper_bound(Eigen::VectorXd::Zero(23));
 
       // Plate position constraints
       lower_bound[0] = -0.2;
       lower_bound[1] = -0.2;
-      lower_bound[2] = -0.2; 
       upper_bound[0] = 0.2;
       upper_bound[1] = 0.2;
-      upper_bound[2] = 0.5;
       
       // Plate rotation constraints
+      lower_bound[2] = -0.4;
       lower_bound[3] = -0.4;
-      lower_bound[4] = -0.4;
+      upper_bound[2] = 0.4;
       upper_bound[3] = 0.4;
-      upper_bound[4] = 0.4;
+      // lower_bound[5] = -0.001;
+      // upper_bound[5] = 0.001;
 
+      lower_bound[9] = -0.5;
       lower_bound[10] = -0.5;
-      lower_bound[11] = -0.5;
-      lower_bound[12] = -0.3;
+      lower_bound[11] = -0.3;
+      upper_bound[9] = 0.5;
       upper_bound[10] = 0.5;
-      upper_bound[11] = 0.5;
-      upper_bound[12] = 1;
+      upper_bound[11] = 1;
 
+      Eigen::MatrixXd B = Eigen::MatrixXd::Zero(5, 5);
+      Eigen::VectorXd u_lower_bound(Eigen::VectorXd::Zero(5));
+      Eigen::VectorXd u_upper_bound(Eigen::VectorXd::Zero(5));
+
+      B(0, 0) = 1;
+      B(1, 1) = 1;
+      B(2, 2) = 1;
+      // B(3, 3) = 1;
+      // B(4, 4) = 1;
+      // B(5, 5) = 1;
+
+      u_lower_bound[0] = -100;
+      u_lower_bound[1] = -100;
+      u_lower_bound[2] = -100;
+      u_lower_bound[3] = -50;
+      u_lower_bound[4] = -50;
+
+      u_upper_bound[0] = 100;
+      u_upper_bound[1] = 100;
+      u_upper_bound[2] = 200;
+      u_upper_bound[3] = 50;
+      u_upper_bound[4] = 50;
 
       vector<Eigen::VectorXd> x_sol;
       vector<Eigen::VectorXd> u_sol;
@@ -191,7 +211,11 @@ iC3::iC3(
       VectorXd x_start = x_hat.col(0);
       int indexer = 0;
 
+      std::cout << "x0 segment 0: " << x_start.transpose() << std::endl;
+
       for (int i = 0; i < ic3_options_.num_segments; i++) {
+        std::cout << "Segment " << i << std::endl;
+
         LCS shortened_lcs = ShortenLCSFront(lcs, i * segment_length);
         C3::CostMatrices shortened_costs = ShortenCostsFront(i * segment_length);
         std::vector<VectorXd> shortened_targets;
@@ -213,6 +237,16 @@ iC3::iC3(
 
         int N_penalize = std::max(0, ic3_options_.N_penalize_input_change - i * segment_length);
         c3_->SetNPenalizeInputChange(N_penalize);
+       
+        // Set u_target to compensate gravity
+        VectorXd gravity = plant_.CalcGravityGeneralizedForces(context);
+        vector<VectorXd> u_target(N_, Eigen::VectorXd::Zero(5));
+
+        for (int i = 0; i < N_;  i++) {
+          u_target[i](2) = -1 * (gravity[2] + gravity[11]);
+        }
+        c3_->UpdateTargetInput(u_target);
+
 
         u_sol_for_penalization_copy = u_sol_warm_start;
         if (i == 0 && iter == 0) {
@@ -270,7 +304,17 @@ iC3::iC3(
                                             ConstraintVariable::STATE);
         }
 
+        if (ic3_options_.add_input_constraints) {
+          c3_->AddLinearConstraint(B, u_lower_bound, u_upper_bound,
+                                            ConstraintVariable::INPUT);
+        }
+
+        auto c3_start = std::chrono::high_resolution_clock::now();
         c3_->Solve(x_start);
+        auto c3_end = std::chrono::high_resolution_clock::now();
+        auto c3_duration = std::chrono::duration<double>(c3_end - c3_start);
+        std::cout << "C3 time: " << c3_duration.count() << " seconds\n";
+
 
         vector<VectorXd> x_sol_raw = c3_->GetStateSolution();
         u_sol = c3_->GetInputSolution();
@@ -318,8 +362,12 @@ iC3::iC3(
         } 
         c3_quat_norms.push_back(c3_norm);
       }
-
-      auto output = DoRollout(x0, u_hat, lcs_factory);
+   
+      auto rollout_start = std::chrono::high_resolution_clock::now();
+      auto output = DoLCSRollout(x0, u_hat, lcs_factory);
+      auto rollout_end = std::chrono::high_resolution_clock::now();
+      auto rollout_duration = std::chrono::duration<double>(rollout_end - rollout_start);
+      std::cout << "Rollout time: " << rollout_duration.count() << " seconds\n";
 
       lcs = output.first;
       x_hat = output.second;
@@ -361,8 +409,8 @@ iC3::iC3(
           x_cost += (x_curr - xd).transpose() * Q_[i] * (x_curr - xd);
          // std::cout << "i: " << i << ", cost: " << (x_curr - xd).transpose() * Q_[i] * (x_curr - xd) << std::endl;
 
-          rot_cost += (x_curr.segment(6, 4) - xd.segment(6, 4)).transpose() * 
-              Q_[i].block(6, 6, 4, 4) * (x_curr.segment(6, 4) - xd.segment(6, 4));
+          rot_cost += (x_curr.segment(5, 4) - xd.segment(5, 4)).transpose() * 
+              Q_[i].block(5, 5, 4, 4) * (x_curr.segment(5, 4) - xd.segment(5, 4));
           
           // std::cout << "i: " << i << ", rot cost: " << (x_curr.segment(5, 4) - xd.segment(5, 4)).transpose() * 
           //     Q_[i].block(5, 5, 4, 4) * (x_curr.segment(5, 4) - xd.segment(5, 4)) << std::endl;
@@ -377,8 +425,8 @@ iC3::iC3(
           //std::cout << "angle: " << angle << std::endl;
 
 
-          pos_cost += (x_curr.segment(10, 3) - xd.segment(10, 3)).transpose() * 
-              Q_[i].block(10, 10, 3, 3) * (x_curr.segment(10, 3) - xd.segment(10, 3));
+          pos_cost += (x_curr.segment(9, 3) - xd.segment(9, 3)).transpose() * 
+              Q_[i].block(9, 9, 3, 3) * (x_curr.segment(9, 3) - xd.segment(9, 3));
           // pos_cost += (x_curr.segment(0, 3) - xd.segment(0, 3)).transpose() * 
           //     Q_[i].block(0, 0, 3, 3) * (x_curr.segment(0, 3) - xd.segment(0, 3));
 
@@ -393,11 +441,16 @@ iC3::iC3(
           if (i < 5) {
             //std::cout << "x_" << i << ": " << x_curr_ret.transpose() << std::endl;
           }
+
+          VectorXd gravity = plant_.CalcGravityGeneralizedForces(context);
+          VectorXd u_des(Eigen::VectorXd::Zero(5));
+          u_des(2) = -1 * (gravity[2] + gravity[11]);
+
           if (*controller_options_.c3_options.penalize_input_change){
             VectorXd u_prev = u_sol_for_penalization_copy[i];
             u_cost += (u_curr - u_prev).transpose() * R_[i] * (u_curr - u_prev);
           } else {
-            u_cost += u_curr.transpose() * R_[i] * u_curr;
+            u_cost += (u_curr-u_des).transpose() * R_[i] * (u_curr-u_des);
           }
           
           //std::cout << "u cost " << i << ": " << (u_curr - u_prev).transpose() * R_[i] * (u_curr - u_prev) << std::endl;;
@@ -479,8 +532,9 @@ iC3::iC3(
                           LCSFactory factory) {
     drake::systems::DiagramBuilder<double> builder;
 
+    
     // TODO: make this less scuffed
-    auto [plant_sim, scene_graph] = drake::multibody::AddMultibodyPlantSceneGraph(&builder, 0.001);
+    auto [plant_sim, scene_graph] = drake::multibody::AddMultibodyPlantSceneGraph(&builder, 0.0001);
     drake::multibody::Parser parser(&plant_sim, &scene_graph);
     const std::string plate_file = "examples/resources/plate/plate.sdf";
     const std::string cube_file = "examples/resources/plate/cube.sdf";
@@ -499,16 +553,24 @@ iC3::iC3(
     plant_sim.SetPositionsAndVelocities(&plant_context, x0);
 
     drake::systems::Simulator<double> simulator(*diagram, std::move(context));
+    simulator.set_target_realtime_rate(1);
     simulator.Initialize();
 
     MatrixXd x_hat(n_x_, N_+1);
     x_hat.col(0) = x0;
 
     int idx = 1;
-    for (double t = 0.0; t < N_ * dt_ - 0.001; t += dt_) {
+    for (double t = 0.0; t < N_ * dt_ - 0.0001; t += dt_) {
+
+      // auto sim_start = std::chrono::high_resolution_clock::now();
+
       simulator.AdvanceTo(t);
       x_hat.col(idx) = plant_sim.GetPositionsAndVelocities(plant_context);
       idx++;
+
+      // auto sim_end = std::chrono::high_resolution_clock::now();
+      // auto sim_duration = std::chrono::duration<double>(sim_end - sim_start);
+      // std::cout << "Sim 1 step time: " << sim_duration.count() << " seconds\n";
     }
 
     LCS output_lcs = MakeTimeVaryingLCS(x_hat, u_hat, factory);
@@ -538,7 +600,32 @@ iC3::iC3(
       E.push_back(lcs.E()[0]);
       F.push_back(lcs.F()[0]);
       H.push_back(lcs.H()[0]);
-      c.push_back(lcs.c()[0]);      
+      c.push_back(lcs.c()[0]);  
+      
+      if (A[k].array().isNaN().all()) {
+        std::cout << "LCS A MATRIX HAS NAN, k = " << k << std::endl;
+      }
+      if (B[k].array().isNaN().all()) {
+        std::cout << "LCS B MATRIX HAS NAN, k = " << k << std::endl;
+      }
+      if (D[k].array().isNaN().all()) {
+        std::cout << "LCS D MATRIX HAS NAN, k = " << k << std::endl;
+      }
+      if (d[k].array().isNaN().all()) {
+        std::cout << "LCS d MATRIX HAS NAN, k = " << k << std::endl;
+      }
+      if (E[k].array().isNaN().all()) {
+        std::cout << "LCS E MATRIX HAS NAN, k = " << k << std::endl;
+      }
+      if (F[k].array().isNaN().all()) {
+        std::cout << "LCS F MATRIX HAS NAN, k = " << k << std::endl;
+      }
+      if (H[k].array().isNaN().all()) {
+        std::cout << "LCS H MATRIX HAS NAN, k = " << k << std::endl;
+      }
+      if (c[k].array().isNaN().all()) {
+        std::cout << "LCS c MATRIX HAS NAN, k = " << k << std::endl;
+      }
     }
 
     return LCS(A, B, D, d, E, F, H, c, dt_);
@@ -575,18 +662,16 @@ iC3::iC3(
     G_.clear();
     U_.clear();
 
-
-    double discount_factor = 1;
+    // Only apply discount factor to rotations
     for (int i = 0; i < N_; i++) {
-      Q_.push_back(discount_factor * controller_options_.c3_options.Q);
-      discount_factor *=  controller_options_.c3_options.gamma;
+      Q_.push_back(controller_options_.c3_options.Q);
       if (i < N_) {
-        R_.push_back(discount_factor * controller_options_.c3_options.R);
+        R_.push_back(controller_options_.c3_options.R);
         G_.push_back(controller_options_.c3_options.G);
         U_.push_back(controller_options_.c3_options.U);
       }
     }  
-    Q_.push_back(discount_factor * controller_options_.c3_options.Q); 
+    Q_.push_back(controller_options_.c3_options.Q); 
 
     for (int i = 0; i < N_ + 1; i++) {
       int j = 0;
@@ -607,7 +692,7 @@ iC3::iC3(
 
         Eigen::MatrixXd quat_regularizer_1 = std::max(0.0, -min_eigenval) * Eigen::MatrixXd::Identity(4, 4);
         Eigen::MatrixXd quat_regularizer_2 = quat_des_i * quat_des_i.transpose();
-        Eigen::MatrixXd quat_regularizer_3 = 1e-8 * Eigen::MatrixXd::Identity(4, 4);
+        Eigen::MatrixXd quat_regularizer_3 = 1e-5 * Eigen::MatrixXd::Identity(4, 4);
 
         double discount_factor = 1;
         Q_[i].block(index, index, 4, 4) = 

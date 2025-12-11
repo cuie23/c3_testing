@@ -112,6 +112,10 @@ C3::C3(const LCS& lcs, const CostMatrices& costs,
       z_.at(i).push_back(u_.back());
     }
   }
+  
+  for (int i = 0; i < N_; i++) {
+    u_desired_.push_back(VectorXd::Zero(n_u_));
+  }
 
   // initialize the constraint bindings
   initial_state_constraint_ = nullptr;
@@ -152,7 +156,8 @@ C3::C3(const LCS& lcs, const CostMatrices& costs,
     if (i == N_) break;
     input_costs_[i] = prog_
                           .AddQuadraticCost(2 * cost_matrices_.R.at(i),
-                                            VectorXd::Zero(n_u_), u_.at(i), 1)
+                              -2 * cost_matrices_.R.at(i) * u_desired_.at(i),
+                              u_.at(i), 1)
                           .evaluator();
   }
 
@@ -260,6 +265,15 @@ void C3::UpdateTarget(const std::vector<Eigen::VectorXd>& x_des) {
   }
 }
 
+void C3::UpdateTargetInput(const std::vector<Eigen::VectorXd>& u_des) {
+  u_desired_ = u_des;
+  for (int i = 0; i < N_; ++i) {
+    input_costs_[i]->UpdateCoefficients(
+        2 * cost_matrices_.R.at(i),
+        -2 * cost_matrices_.R.at(i) * u_desired_.at(i));
+  }
+}
+
 void C3::UpdateCostMatrices(const CostMatrices& costs) {
   DRAKE_DEMAND(cost_matrices_.HasSameDimensionsAs(costs));
   cost_matrices_ = costs;
@@ -281,6 +295,12 @@ const std::vector<drake::solvers::QuadraticCost*>& C3::GetTargetCost() {
 
 void C3::Solve(const VectorXd& x0) {
   auto start = std::chrono::high_resolution_clock::now();
+
+  if (x0.array().isNaN().all()) {
+    std::cout << "x0 is NaN!!!!!!!" << std::endl;
+    std::cout << x0.transpose() << std::endl;
+  }
+
   // Set the initial state constraint
   if (initial_state_constraint_) {
     initial_state_constraint_->UpdateCoefficients(
@@ -295,6 +315,7 @@ void C3::Solve(const VectorXd& x0) {
 
   // Set the initial force constraint
   if (h_is_zero_ == 1) {  // No dependence on u, so just simulate passive system
+    std::cout << "H IS 0!!!!!" << std::endl;
     drake::solvers::MobyLCPSolver<double> LCPSolver;
     VectorXd lambda0;
     LCPSolver.SolveLcpLemke(lcs_.F()[0], lcs_.E()[0] * x0 + lcs_.c()[0],
@@ -481,6 +502,7 @@ vector<VectorXd> C3::SolveQP(const VectorXd& x0, const vector<MatrixXd>& G,
   MathematicalProgramResult result = osqp_.Solve(prog_);
 
   if (!result.is_success()) {
+    std::cout << "Solver failed" << std::endl;
     drake::log()->warn("C3::SolveQP failed to solve the QP with status: {}",
                        result.get_solution_result());
   }
@@ -531,6 +553,15 @@ void C3::AddLinearConstraint(const Eigen::MatrixXd& A,
                              const VectorXd& upper_bound,
                              ConstraintVariable constraint) {
   if (constraint == 1) {
+      if (A.array().array().isNaN().all()) {
+        std::cout << "A has NaN" << std::endl;
+      }
+      if (lower_bound.array().array().isNaN().all()) {
+        std::cout << "A has NaN" << std::endl;
+      }
+      if (upper_bound.array().array().isNaN().all()) {
+        std::cout << "A has NaN" << std::endl;
+      }  
     for (int i = 1; i < N_; ++i) {
       user_constraints_.push_back(
           prog_.AddLinearConstraint(A, lower_bound, upper_bound, x_.at(i)));
@@ -538,6 +569,15 @@ void C3::AddLinearConstraint(const Eigen::MatrixXd& A,
   }
 
   if (constraint == 2) {
+      if (A.array().array().isNaN().all()) {
+        std::cout << "A has NaN" << std::endl;
+      }
+      if (lower_bound.array().array().isNaN().all()) {
+        std::cout << "A has NaN" << std::endl;
+      }
+      if (upper_bound.array().array().isNaN().all()) {
+        std::cout << "A has NaN" << std::endl;
+      }
     for (int i = 0; i < N_; ++i) {
       user_constraints_.push_back(
           prog_.AddLinearConstraint(A, lower_bound, upper_bound, u_.at(i)));

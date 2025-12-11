@@ -120,6 +120,7 @@ class TimedGravityCompGate final : public drake::systems::LeafSystem<double> {
 		u_gravity[2] = -1 * (tau_g[2] + tau_g[10]); // Hard-coded cube + plate
 		u_gravity[3] = (tau_g[10] * x[10]); // Hard-coded cube + plate
 		u_gravity[4] = (tau_g[10] * x[9]); // Hard-coded cube + plate
+    std::cout << "gravity " << (tau_g[2] + tau_g[10]) << std::endl;
 
 		// u_gravity[4] = -1 * (tau_g[4]); // Hard-coded cube + plate
 
@@ -727,7 +728,7 @@ int RunPlateTest() {
   // c3_controller->AddLinearConstraint(A, lower_bound, upper_bound,
   //                                    ConstraintVariable::STATE);
 
-  Eigen::VectorXd xd(25);
+  Eigen::VectorXd xd(23);
   //xd << 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
 	xd << 0, 0, 0, 0, 0, 0, 1, 0, 0, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0;
 
@@ -741,11 +742,11 @@ int RunPlateTest() {
 
   // Add a vector-to-timestamped-vector converter.
   auto vector_to_timestamped_vector =
-      builder.AddSystem<Vector2TimestampedVector>(25);
+      builder.AddSystem<Vector2TimestampedVector>(23);
   builder.Connect(plant.get_state_output_port(),
                   vector_to_timestamped_vector->get_input_port_state());
 
-	auto gate = builder.AddSystem<TimedGravityCompGate>(plant, 1.0, 6);
+	auto gate = builder.AddSystem<TimedGravityCompGate>(plant, 0.3, 5);
   // Connect controller inputs.
   builder.Connect(
       vector_to_timestamped_vector->get_output_port_timestamped_state(),
@@ -760,7 +761,7 @@ int RunPlateTest() {
                   c3_controller->get_input_port_target());
 
   // Add and connect the C3 solution input system.
-  auto c3_input = builder.AddSystem<C3Solution2Input>(6);
+  auto c3_input = builder.AddSystem<C3Solution2Input>(5);
   builder.Connect(c3_controller->get_output_port_c3_solution(),
                   c3_input->get_input_port_c3_solution());
 
@@ -772,7 +773,7 @@ int RunPlateTest() {
   // Add a ZeroOrderHold system for state updates.
   auto input_zero_order_hold =
       builder.AddSystem<drake::systems::ZeroOrderHold<double>>(
-          1 / options.publish_frequency, 6);
+          1 / options.publish_frequency, 5);
   builder.Connect(c3_input->get_output_port_c3_input(),
                   input_zero_order_hold->get_input_port());
   builder.Connect(
@@ -783,7 +784,7 @@ int RunPlateTest() {
 
 
 
-	Eigen::Vector4d q_vec = xd.segment(6, 4);
+	Eigen::Vector4d q_vec = xd.segment(5, 4);
 	Eigen::Quaterniond q(q_vec(0), q_vec(1), q_vec(2), q_vec(3));
 	q.normalize();
   RotationMatrixd R_target(q);
@@ -832,7 +833,7 @@ int RunPlateTest() {
   auto diagram_context = diagram->CreateDefaultContext();
 
   // Set the initial state of the system.
-  Eigen::VectorXd x0(25);
+  Eigen::VectorXd x0(23);
 	x0 << 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
 
   // x0 << 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
@@ -1231,7 +1232,7 @@ int RunPlateTestiC3(drake::lcm::DrakeLcm& lcm) {
   auto diagram_context = diagram->CreateDefaultContext();
 
   // Set the initial state of the system.
-  Eigen::VectorXd x0(25);
+  Eigen::VectorXd x0(23);
 	x0 << 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
 
   // x0 << 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
@@ -1283,6 +1284,8 @@ int main(int argc, char* argv[]) {
     std::cout << "Running Cube Pivoting Test..." << std::endl;
     return RunPivotingTest();
   } else if (FLAGS_experiment_type == "plate") {
+    // bazel run //examples:lcs_factory_system_example -- --experiment_type=plate
+
     std::cout << "Running Plate Test..." << std::endl;
     return RunPlateTest();
   } else if (FLAGS_experiment_type == "manual") {

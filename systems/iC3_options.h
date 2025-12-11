@@ -8,6 +8,7 @@ struct iC3Options {
 
   int num_iters;
   bool add_position_constraints;
+  bool add_input_constraints;
   int num_segments;
   int N_penalize_input_change;
 
@@ -18,6 +19,7 @@ struct iC3Options {
     a->Visit(DRAKE_NVP(num_iters));
     a->Visit(DRAKE_NVP(N_penalize_input_change));
     a->Visit(DRAKE_NVP(add_position_constraints));
+    a->Visit(DRAKE_NVP(add_input_constraints));
     a->Visit(DRAKE_NVP(num_segments));
     a->Visit(DRAKE_NVP(print_costs));
 
