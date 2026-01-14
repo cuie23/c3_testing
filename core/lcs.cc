@@ -1,4 +1,5 @@
 #include "lcs.h"
+#include <iostream> 
 
 #include "drake/solvers/moby_lcp_solver.h"
 
@@ -61,14 +62,31 @@ const VectorXd LCS::Simulate(VectorXd& x_init, VectorXd& u,
                              bool regularized) const {
   VectorXd x_final;
   VectorXd force;
+  int flag;
   drake::solvers::MobyLCPSolver<double> LCPSolver;
   if (regularized) {
-    LCPSolver.SolveLcpLemkeRegularized(
+    flag = LCPSolver.SolveLcpLemkeRegularized(
         F_[0], E_[0] * x_init + c_[0] + H_[0] * u, &force);
   } else {
-    LCPSolver.SolveLcpLemke(F_[0], E_[0] * x_init + c_[0] + H_[0] * u, &force);
+    flag = LCPSolver.SolveLcpLemke(F_[0], E_[0] * x_init + c_[0] + H_[0] * u, &force);
   }
+
+  if (flag == 0) {
+    std::cout << "LCP failed: returning x_init" << std::endl;
+    return x_init;
+  }
+
   x_final = A_[0] * x_init + B_[0] * u + D_[0] * force + d_[0];
+
+  // for (int i = 0; i < 8; i++) {
+  //   VectorXd lambda_i = force.segment(4*i, 4);
+  //   if (lambda_i.norm() != 0) {
+  //     std::cout << "Contact point " << i << " lambdas: " << lambda_i.transpose() << std::endl;
+  //   }
+  // }
+  // std::cout << std::endl;
+
+
   return x_final;
 }
 

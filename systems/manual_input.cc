@@ -30,7 +30,7 @@ void ManualInput::ComputeManualInput(const drake::systems::Context<double>& cont
   Eigen::VectorXd u_gravity = Eigen::VectorXd::Zero(5);
   u_gravity[2] = -1 * (tau_g[2] + tau_g[10]); // Hard-coded cube + plate
 
-  if (t > dt_ * N_ + 5.0 || t < 5.0) { 
+  if (t > dt_ * N_ + 20.0 || t < 20.0) { 
     // Just compensate gravity if time is past horizon
 
 
@@ -41,7 +41,7 @@ void ManualInput::ComputeManualInput(const drake::systems::Context<double>& cont
 
 
     VectorXd u_sol(VectorXd::Zero(5));
-    double k = (t - 5.0) / dt_;
+    double k = (t - 20.0) / dt_;
 
     if (k < 10) {
       u_sol[2] = 80 - 120 / (1 + std::exp(-0.8 * (k-5))); // throw block

@@ -992,6 +992,15 @@ int RunManualPlateTest() {
   // x0 << 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
   std::vector<double> x_init = *options.x_init;
   x0 = Eigen::Map<Eigen::VectorXd>(x_init.data(), x_init.size());
+  x0 << 0, 0, -0.05,
+        0, 0,    
+        1, 0, 0, 0, 
+        -0.2, 0, 0,
+        0.0268965, 0, -0.676614,  
+        0, 6.11642,
+        0, 6.11642, 0,    
+        0.185923, 0, 2.14667;
+
 	std::cout << "x0: " << x0.transpose() << std::endl;
 
 	auto& plant_context =
@@ -1002,9 +1011,9 @@ int RunManualPlateTest() {
   // Create and configure the simulator.
   drake::systems::Simulator<double> simulator(*diagram,
                                               std::move(diagram_context));
-  simulator.set_target_realtime_rate(0.25);  // Run simulation at 0.25 speed.
+  simulator.set_target_realtime_rate(0.1);  // Run simulation at 0.25 speed.
   simulator.Initialize();
-  simulator.AdvanceTo(8.0);  
+  simulator.AdvanceTo(3.0);  
 
   const auto& root_context = simulator.get_context();  // const root context after simulation
   const auto& state_log = state_logger->FindLog(root_context);  // returns const VectorLog<double>&
@@ -1015,8 +1024,8 @@ int RunManualPlateTest() {
   std::cout << "state size " << states.rows() << ", " << states.cols() << std::endl;
   std::cout << "input size " << inputs.rows() << ", " << inputs.cols() << std::endl;
 
-  MatrixXd x_traj = states.middleCols(250, 81);
-  MatrixXd u_traj = states.middleCols(250, 80);
+  MatrixXd x_traj = states;
+  MatrixXd u_traj = inputs;
 
   std::pair<vector<MatrixXd>, vector<MatrixXd>> costs = UpdateQuaternionCosts(options, x_traj, xd);
   vector<MatrixXd> Q = costs.first;
@@ -1027,43 +1036,57 @@ int RunManualPlateTest() {
   double x_cost = 0;
   double pos_cost = 0;
   double rot_cost = 0;
-  for (int i = 0; i < Q.size() - 1; i++) {
-    VectorXd x_curr = x_traj.col(i);
-    x_cost += (x_curr - xd).transpose() * Q[i] * (x_curr - xd);
-    //std::cout << "i: " << i << ", cost: " << (x_curr - xd).transpose() * Q[i] * (x_curr - xd) << std::endl;
+  // for (int i = 0; i < Q.size() - 1; i++) {
+  //   VectorXd x_curr = x_traj.col(i);
+  //   x_cost += (x_curr - xd).transpose() * Q[i] * (x_curr - xd);
+  //   //std::cout << "i: " << i << ", cost: " << (x_curr - xd).transpose() * Q[i] * (x_curr - xd) << std::endl;
 
-    rot_cost += (x_curr.segment(5, 4) - xd.segment(5, 4)).transpose() * 
-        Q[i].block(5, 5, 4, 4) * (x_curr.segment(5, 4) - xd.segment(5, 4));
-    std::cout << "i: " << i << ", rot cost: " << (x_curr.segment(5, 4) - xd.segment(5, 4)).transpose() * 
-        Q[i].block(5, 5, 4, 4) * (x_curr.segment(5, 4) - xd.segment(5, 4)) << std::endl;
+  //   rot_cost += (x_curr.segment(5, 4) - xd.segment(5, 4)).transpose() * 
+  //       Q[i].block(5, 5, 4, 4) * (x_curr.segment(5, 4) - xd.segment(5, 4));
+  //   std::cout << "i: " << i << ", rot cost: " << (x_curr.segment(5, 4) - xd.segment(5, 4)).transpose() * 
+  //       Q[i].block(5, 5, 4, 4) * (x_curr.segment(5, 4) - xd.segment(5, 4)) << std::endl;
 
-    Eigen::Quaterniond q_curr(x_curr(5), x_curr(6), x_curr(7), x_curr(8));
+    
+  //   Eigen::Quaterniond q_curr(x_curr(5), x_curr(6), x_curr(7), x_curr(8));
+  //   Eigen::Quaterniond q_des(xd(5), xd(6), xd(7), xd(8));
+  //   Eigen::AngleAxisd angle_axis(q_des * q_curr.inverse());
+  //   double angle = angle_axis.angle();    
+  //   std::cout << "angle: " << angle << std::endl << std::endl;
+  //   std::cout << "q: " << q_curr << std::endl;
+
+  //   pos_cost += (x_curr.segment(9, 3) - xd.segment(9, 3)).transpose() * 
+  //       Q[i].block(9, 9, 3, 3) * (x_curr.segment(9, 3) - xd.segment(9, 3));
+
+  // } 
+
+
+
+  // double u_cost = 0;
+  // VectorXd u_prev(VectorXd::Zero(5));
+  // for (int i = 0; i < R.size(); i++) {
+  //   VectorXd u_curr = u_traj.col(i);
+  //   u_cost += (u_curr - u_prev).transpose() * R[i] * (u_curr - u_prev);
+  // } 
+
+  // std::cout << "x cost: " << x_cost << std::endl;
+  // std::cout << "position cost: " << pos_cost << std::endl;
+  // std::cout << "rotation cost: " << rot_cost << std::endl;
+  // std::cout << "u cost: " << u_cost << std::endl;
+
+
+  for (int i = 0; i < x_traj.cols(); i++) {
+    VectorXd x_curr = x_traj.col(i).segment(5, 4).normalized();
+
+    std::cout << "iteration: " << i << std::endl;
+    std::cout << x_curr.transpose() << std::endl;
+
+
+    Eigen::Quaterniond q_curr(x_curr(0), x_curr(1), x_curr(2), x_curr(3));
     Eigen::Quaterniond q_des(xd(5), xd(6), xd(7), xd(8));
     Eigen::AngleAxisd angle_axis(q_des * q_curr.inverse());
     double angle = angle_axis.angle();    
     std::cout << "angle: " << angle << std::endl << std::endl;
-
-    pos_cost += (x_curr.segment(9, 3) - xd.segment(9, 3)).transpose() * 
-        Q[i].block(9, 9, 3, 3) * (x_curr.segment(9, 3) - xd.segment(9, 3));
-
-  } 
-
-
-  double u_cost = 0;
-  VectorXd u_prev(VectorXd::Zero(5));
-  for (int i = 0; i < R.size(); i++) {
-    VectorXd u_curr = u_traj.col(i);
-    u_cost += (u_curr - u_prev).transpose() * R[i] * (u_curr - u_prev);
-  } 
-
-  std::cout << "x cost: " << x_cost << std::endl;
-  std::cout << "position cost: " << pos_cost << std::endl;
-  std::cout << "rotation cost: " << rot_cost << std::endl;
-  std::cout << "u cost: " << u_cost << std::endl;
-
-
-
-
+  }
   return 0;
 }
 
@@ -1226,7 +1249,7 @@ int RunPlateTestiC3(drake::lcm::DrakeLcm& lcm) {
   // x0 << 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
   std::vector<double> x_init = *options.x_init;
   x0 = Eigen::Map<Eigen::VectorXd>(x_init.data(), x_init.size());
-	std::cout << "x0: " << x0.transpose() << std::endl;
+	//std::cout << "x0: " << x0.transpose() << std::endl;
 
 	auto& plant_context =
       diagram->GetMutableSubsystemContext(plant, diagram_context.get());

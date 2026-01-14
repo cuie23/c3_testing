@@ -7,7 +7,17 @@
       <!-- Plate -->
       <link name="plate">
         <pose>0 0 0 0 0 0</pose>
-        <inertial><mass>0.5</mass></inertial>
+        <inertial>
+          <mass>0.5</mass>
+           <inertia>
+            <ixx>0.02001</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>0.02001</iyy>
+            <iyz>0</iyz>
+            <izz>0.04</izz>
+          </inertia>
+        </inertial>
         <visual name="plate_visual">
           <geometry>
             <cylinder>

@@ -7,22 +7,17 @@
         <inertial>
           <mass>0.05</mass>
           <inertia>
-            <ixx>0.0000804</ixx>
-            <ixy>0</ixy>
-            <ixz>0</ixz>
-            <iyy>0.0000804</iyy>
-            <iyz>0</iyz>
-            <izz>0.00016</izz>
+            <ixx>0.000083</ixx>
+            <iyy>0.000083</iyy>
+            <izz>0.000083</izz>
+            <ixy>0.0</ixy>
+            <ixz>0.0</ixz>
+            <iyz>0.0</iyz>
           </inertia>
         </inertial>
         
         <visual name="cube_visual">
-          <geometry>
-            <cylinder>
-              <radius>0.08</radius>
-              <length> 0.02 </length>
-            </cylinder>
-          </geometry>
+          <geometry><box><size>0.1 0.1 0.1</size></box></geometry>
           <material><diffuse>0.8 0.4 0.0 1</diffuse></material>
         </visual>
          <visual name="z_axis">
@@ -72,10 +67,7 @@
          <collision name="cube">
           <pose>0 0 0 0 0 0</pose>
           <geometry>
-            <cylinder>
-              <radius>0.08</radius>
-              <length> 0.02 </length>
-            </cylinder>
+            <box><size>0.1 0.1 0.1</size></box>
           </geometry>
         <drake:proximity_properties>
           <drake:mu_static>0.6</drake:mu_static>
@@ -84,7 +76,7 @@
 
         </collision>
         <collision name="corner_1">
-          <pose>0.08 0 0 0 0 0</pose>
+          <pose>0.05 0.05 0.05 0 0 0</pose>
           <geometry>
             <sphere>
               <radius>0.001 0.001 0.001</radius>
@@ -96,7 +88,7 @@
           </drake:proximity_properties>
         </collision>
         <collision name="corner_2">
-          <pose>-0.08 0 0 0 0 0</pose>
+          <pose>-0.05 0.05 0.05 0 0 0</pose>
           <geometry>
             <sphere>
               <radius>0.001 0.001 0.001</radius>
@@ -108,7 +100,7 @@
           </drake:proximity_properties>
         </collision>
         <collision name="corner_3">
-          <pose>0 0.08 0 0 0 0</pose>
+          <pose>0.05 -0.05 0.05 0 0 0</pose>
           <geometry>
             <sphere>
               <radius>0.001 0.001 0.001</radius>
@@ -120,7 +112,7 @@
           </drake:proximity_properties>
         </collision>
         <collision name="corner_4">
-          <pose>0 -0.08 0 0 0 0</pose>
+          <pose>0.05 0.05 -0.05 0 0 0</pose>
           <geometry>
             <sphere>
               <radius>0.001 0.001 0.001</radius>
@@ -132,7 +124,7 @@
           </drake:proximity_properties>
         </collision>
         <collision name="corner_5">
-          <pose>0.05657 -0.05657 0 0 0 0</pose>
+          <pose>-0.05 -0.05 0.05 0 0 0</pose>
           <geometry>
             <sphere>
               <radius>0.001 0.001 0.001</radius>
@@ -144,7 +136,7 @@
           </drake:proximity_properties>
         </collision>
         <collision name="corner_6">
-          <pose>-0.05657 -0.05657 0 0 0 0</pose>
+          <pose>-0.05 0.05 -0.05 0 0 0</pose>
           <geometry>
             <sphere>
               <radius>0.001 0.001 0.001</radius>
@@ -156,7 +148,7 @@
           </drake:proximity_properties>
         </collision>
         <collision name="corner_7">
-          <pose>-0.05657 0.05657 0 0 0 0</pose>
+          <pose>0.05 -0.05 -0.05 0 0 0</pose>
           <geometry>
             <sphere>
               <radius>0.001 0.001 0.001</radius>
@@ -168,7 +160,7 @@
           </drake:proximity_properties>
         </collision>
         <collision name="corner_8">
-          <pose>0.05657 0.05657 0 0 0 0</pose>
+          <pose>-0.05 -0.05 -0.05 0 0 0</pose>
           <geometry>
             <sphere>
               <radius>0.001 0.001 0.001</radius>
