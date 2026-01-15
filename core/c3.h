@@ -97,6 +97,7 @@ class C3 {
    * @param x_des the new reference trajectory
    */
   void UpdateTarget(const std::vector<Eigen::VectorXd>& x_des);
+  void UpdateInputTarget(const std::vector<Eigen::VectorXd>& u_des);
 
   /**
    * @brief Updates the provided cost matrices with new or modified values.
@@ -311,6 +312,8 @@ class C3 {
   double AnDn_ = 1.0;  // Scaling factor for lambdas
   CostMatrices cost_matrices_;
   std::vector<Eigen::VectorXd> x_desired_;
+  std::vector<Eigen::VectorXd> u_desired_;
+
   const C3Options options_;
   double solve_time_ = 0;
   bool h_is_zero_;

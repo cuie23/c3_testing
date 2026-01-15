@@ -113,8 +113,11 @@ iC3::iC3(
 
     LCS lcs = MakeTimeVaryingLCS(x_hat, u_hat, lcs_factory);
 
-    vector<VectorXd> u_sol_for_penalization;
-    vector<VectorXd> u_sol_for_penalization_copy;
+    VectorXd gravity(5);
+    gravity << 0, 0, 30, 0, 0;
+    vector<VectorXd> u_nominal(N_, gravity);
+    vector<VectorXd> u_sol_for_penalization(N_, gravity);
+    vector<VectorXd> u_sol_for_penalization_copy(N_, VectorXd::Zero(n_u_));
 
     vector<VectorXd> c3_quat_norms;
     for (int index : controller_options_.quaternion_indices) {
@@ -139,22 +142,33 @@ iC3::iC3(
       A(2, 2) = 1;
       A(3, 3) = 1;
       A(4, 4) = 1;
+      // A(9, 9) = 1;
+      // A(10, 10) = 1;
+      //A(11, 11) = 1;
+
       Eigen::VectorXd lower_bound(Eigen::VectorXd::Zero(23));
       Eigen::VectorXd upper_bound(Eigen::VectorXd::Zero(23));
 
       // Plate position constraints
       lower_bound[0] = -0.2;
       lower_bound[1] = -0.2;
-      lower_bound[2] = -1; 
+      lower_bound[2] = -0.2; 
       upper_bound[0] = 0.2;
       upper_bound[1] = 0.2;
-      upper_bound[2] = 0.1;
+      upper_bound[2] = 1;
       
       // Plate rotation constraints
-      lower_bound[3] = -0.5;
-      lower_bound[4] = -0.5;
-      upper_bound[3] = 0.5;
-      upper_bound[4] = 0.5;
+      lower_bound[3] = -0.3;
+      lower_bound[4] = -0.3;
+      upper_bound[3] = 0.3;
+      upper_bound[4] = 0.3;
+
+      // lower_bound[9] = -0.4;
+      // lower_bound[10] = -0.4;
+      // lower_bound[11] = -0.2; 
+      // upper_bound[9] = 0.4;
+      // upper_bound[10] = 0.4;
+      // upper_bound[11] = 1;
 
       // Actuation limits
       Eigen::MatrixXd A_u = Eigen::MatrixXd::Zero(5, 5);
@@ -203,10 +217,11 @@ iC3::iC3(
 
         int N_penalize = std::max(0, ic3_options_.N_penalize_input_change - i * segment_length);
         c3_->SetNPenalizeInputChange(N_penalize);
+        c3_->UpdateInputTarget(u_nominal);
 
         u_sol_for_penalization_copy = u_sol_for_penalization;
         if (i == 0 && iter == 0) {
-            // On first iteration just use 0s
+            // On first iteration just use init values
         } else if (i == 0) { 
           // Take from previous iC3 iteration
           vector<VectorXd> u_sol_keep = u_sol_for_penalization;
@@ -378,7 +393,7 @@ iC3::iC3(
           int matched_count = 0;
           vector<int> quat_idxs = controller_options_.quaternion_indices;
 
-          for (int s = (int)(0.7 * s); s < x_hat.cols(); s++) {
+          for (int s = (int)(0.8 * N_); s < x_hat.cols(); s++) {
 
             for (int r = 0; r < quat_idxs.size(); r++) {
               VectorXd v_curr = x_hat.col(s).segment(quat_idxs[r], 4).normalized(); 
@@ -396,7 +411,7 @@ iC3::iC3(
           }
           // Random heuristic for stopping condition
           std::cout << "matched count: " << matched_count << std::endl;
-          if (matched_count >= 0.5 * (0.3 * N_)) {
+          if (matched_count >= 0.6 * (0.2 * N_)) {
             iter = 99999;
           }
         }
@@ -410,7 +425,7 @@ iC3::iC3(
       std::cout << "x_hat " << i << ": " << x_hat.col(i).transpose() << std::endl;
     }
     std::cout << std::endl;
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < N_; i++) {
       std::cout << "u_hat " << i << ": " << u_hat.col(i).transpose() << std::endl;
     }
   

@@ -1288,6 +1288,8 @@ int main(int argc, char* argv[]) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   drake::lcm::DrakeLcm lcm(FLAGS_lcm_url);
 
+  // bazel run //examples:lcs_factory_system_example -- --experiment_type=iC3
+
   if (FLAGS_experiment_type == "cartpole_softwalls") {
     std::cout << "Running Cartpole Softwalls Test..." << std::endl;
     return RunCartpoleTest();

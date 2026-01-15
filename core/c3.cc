@@ -256,6 +256,15 @@ void C3::UpdateTarget(const std::vector<Eigen::VectorXd>& x_des) {
   }
 }
 
+void C3::UpdateInputTarget(const std::vector<Eigen::VectorXd>& u_des) {
+  u_desired_ = u_des;
+  for (int i = 0; i < N_; ++i) {
+    input_costs_[i]->UpdateCoefficients(
+        2 * cost_matrices_.R.at(i),
+        -2 * cost_matrices_.R.at(i) * u_desired_.at(i));
+  }
+}
+
 void C3::UpdateCostMatrices(const CostMatrices& costs) {
   DRAKE_DEMAND(cost_matrices_.HasSameDimensionsAs(costs));
   cost_matrices_ = costs;
