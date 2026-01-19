@@ -286,49 +286,49 @@ void C3Controller::OutputC3Intermediates(
 void C3Controller::UpdateQuaternionCosts(
     const Eigen::VectorXd& x_curr, const Eigen::VectorXd& x_des) const {
     
-    Q_.clear();
-    R_.clear();
-    G_.clear();
-    U_.clear();
+  Q_.clear();
+  R_.clear();
+  G_.clear();
+  U_.clear();
 
+
+  double discount_factor = 1;
+  for (int i = 0; i < N_; i++) {
+    Q_.push_back(discount_factor *  controller_options_.c3_options.Q);
+    discount_factor *=  controller_options_.c3_options.gamma;
+    if (i < N_) {
+      R_.push_back(discount_factor *  controller_options_.c3_options.R);
+      G_.push_back( controller_options_.c3_options.G);
+      U_.push_back( controller_options_.c3_options.U);
+    }
+  }  
+  Q_.push_back(discount_factor * controller_options_.c3_options.Q); 
+
+  for (int index : controller_options_.quaternion_indices) {
+    
+    Eigen::VectorXd quat_curr_i = x_curr.segment(index, 4);
+    Eigen::VectorXd quat_des_i = x_des.segment(index, 4);
+
+    Eigen::MatrixXd quat_hessian_i = common::hessian_of_squared_quaternion_angle_difference(quat_curr_i, quat_des_i);
+
+    // Regularize hessian so Q is always PSD
+    double min_eigenval = quat_hessian_i.eigenvalues().real().minCoeff();
+    Eigen::MatrixXd quat_regularizer_1 = std::max(0.0, -min_eigenval) * Eigen::MatrixXd::Identity(4, 4);
+    Eigen::MatrixXd quat_regularizer_2 = quat_des_i * quat_des_i.transpose();
+    Eigen::MatrixXd quat_regularizer_3 = 1e-8 * Eigen::MatrixXd::Identity(4, 4);
 
     double discount_factor = 1;
-    for (int i = 0; i < N_; i++) {
-      Q_.push_back(discount_factor *  controller_options_.c3_options.Q);
-      discount_factor *=  controller_options_.c3_options.gamma;
-      if (i < N_) {
-        R_.push_back(discount_factor *  controller_options_.c3_options.R);
-        G_.push_back( controller_options_.c3_options.G);
-        U_.push_back( controller_options_.c3_options.U);
-      }
-    }  
-    Q_.push_back(discount_factor * controller_options_.c3_options.Q); 
+    for (int i = 0; i < N_ + 1; i++) {
+      Q_[i].block(index, index, 4, 4) = 
+        discount_factor * controller_options_.Q_quaternion_weight * 
+        (quat_hessian_i + quat_regularizer_1 + 
+          controller_options_.quaternion_regularizer_fraction * quat_regularizer_2 + quat_regularizer_3);
+      discount_factor *= controller_options_.c3_options.gamma;
 
-    for (int index : controller_options_.quaternion_indices) {
-      
-      Eigen::VectorXd quat_curr_i = x_curr.segment(index, 4);
-      Eigen::VectorXd quat_des_i = x_des.segment(index, 4);
-
-      Eigen::MatrixXd quat_hessian_i = common::hessian_of_squared_quaternion_angle_difference(quat_curr_i, quat_des_i);
-
-      // Regularize hessian so Q is always PSD
-      double min_eigenval = quat_hessian_i.eigenvalues().real().minCoeff();
-      Eigen::MatrixXd quat_regularizer_1 = std::max(0.0, -min_eigenval) * Eigen::MatrixXd::Identity(4, 4);
-      Eigen::MatrixXd quat_regularizer_2 = quat_des_i * quat_des_i.transpose();
-      Eigen::MatrixXd quat_regularizer_3 = 1e-8 * Eigen::MatrixXd::Identity(4, 4);
-
-      double discount_factor = 1;
-      for (int i = 0; i < N_ + 1; i++) {
-        Q_[i].block(index, index, 4, 4) = 
-          discount_factor * controller_options_.Q_quaternion_weight * 
-          (quat_hessian_i + quat_regularizer_1 + 
-           controller_options_.quaternion_regularizer_fraction * quat_regularizer_2 + quat_regularizer_3);
-        discount_factor *= controller_options_.c3_options.gamma;
-
-        double Q_min_eigenval = Q_[i].eigenvalues().real().minCoeff();
-      }
+      double Q_min_eigenval = Q_[i].eigenvalues().real().minCoeff();
     }
   }
+}
 
 }  // namespace systems
 }  // namespace c3

@@ -114,7 +114,7 @@ iC3::iC3(
     LCS lcs = MakeTimeVaryingLCS(x_hat, u_hat, lcs_factory);
 
     VectorXd gravity(5);
-    gravity << 0, 0, 30, 0, 0;
+    gravity << 0, 0, 53, 0, 0;
     vector<VectorXd> u_nominal(N_, gravity);
     vector<VectorXd> u_sol_for_penalization(N_, gravity);
     vector<VectorXd> u_sol_for_penalization_copy(N_, VectorXd::Zero(n_u_));
@@ -158,10 +158,10 @@ iC3::iC3(
       upper_bound[2] = 1;
       
       // Plate rotation constraints
-      lower_bound[3] = -0.3;
-      lower_bound[4] = -0.3;
-      upper_bound[3] = 0.3;
-      upper_bound[4] = 0.3;
+      lower_bound[3] = -0.8;
+      lower_bound[4] = -0.8;
+      upper_bound[3] = 0.8;
+      upper_bound[4] = 0.8;
 
       // lower_bound[9] = -0.4;
       // lower_bound[10] = -0.4;
@@ -481,7 +481,7 @@ iC3::iC3(
       VectorXd u_k = u_hat.col(k);
 
       //std::cout << "lcs simulate timestep " << k << std::endl;
-      x_next = lcs.Simulate(x_curr, u_k, false);
+      x_next = lcs.Simulate(x_curr, u_k, true);
 
       x_hat.col(k+1) = x_next;
       x_curr = x_next;

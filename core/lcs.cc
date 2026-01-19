@@ -97,7 +97,7 @@ const VectorXd LCS::SimulateAtTimestep(VectorXd& x_init, VectorXd& u,
   drake::solvers::MobyLCPSolver<double> LCPSolver;
   if (regularized) {
     LCPSolver.SolveLcpLemkeRegularized(
-        F_[k], E_[k] * x_init + c_[k] + H_[k] * u, &force);
+        F_[k], E_[k] * x_init + c_[k] + H_[k] * u, &force, -8, 1, 1);
   } else {
     LCPSolver.SolveLcpLemke(F_[k], E_[k] * x_init + c_[k] + H_[k] * u, &force);
   }
