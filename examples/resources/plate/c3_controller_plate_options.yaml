@@ -26,7 +26,7 @@ x_des: [0, 0, 0,
         0, 0,
         #0.707, 0, 0.707, 0, 
         0, 0, 1, 0,
-        -0, 0, 0.5, 
+        -0, 0, 0, 
         0, 0, 0,
         0, 0,
         0, 0, 0, 
@@ -62,24 +62,24 @@ c3_options:
   rho_scale: 1.1 #matrix scaling
   w_Q: 5
   w_R: 0.1 #Penalty on all decision variables, assuming scalar
-  w_G: 20 #Penalty on all decision variables, assuming scalar
+  w_G: 17 #Penalty on all decision variables, assuming scalar
   w_U: 5 #State Tracking Error, assuming diagonal
 
 
-  q_vector: [200, 200, 100,                # plate pos
+  q_vector: [300, 300, 20,                # plate pos
              50, 50,                    # plate rot
              1, 1, 1, 1,    # cube rot
-             400, 400, 300,           # cube pos              
+             300, 300, 20,           # cube pos              
              1, 1, 1,                # plate velo
-             30, 30,                    # plate ang velo
+             5, 5,                    # plate ang velo
              1, 1, 1,             # cube ang velo
              1, 1, 1]                # cube velo
 
-  r_vector: [10, 10, 0.5, 50, 50]  
+  r_vector: [20, 20, 5, 50, 50]  
   #r_vector: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01] 
   
   #Penalty on matching projected variables
-  g_x: [1, 1, 1, 50, 50, 10, 10, 10, 10, 10, 10, 10, 1 , 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+  g_x: [10, 10, 10, 50, 50, 10, 10, 10, 10, 10, 10, 10, 1 , 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
   g_gamma: [1, 1, 1, 1, 1, 1, 1, 1]
   g_lambda_n: [1, 1, 1, 1, 1, 1, 1, 1]
   g_lambda_t: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]

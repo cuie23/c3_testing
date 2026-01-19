@@ -1131,7 +1131,7 @@ int RunPlateTestiC3(drake::lcm::DrakeLcm& lcm) {
 
   // Build the main diagram.
   DiagramBuilder<double> builder;
-  auto [plant, scene_graph] = AddMultibodyPlantSceneGraph(&builder, 0.001);
+  auto [plant, scene_graph] = AddMultibodyPlantSceneGraph(&builder, 0.0001);
   Parser parser(&plant, &scene_graph);
   const std::string plate_file = "examples/resources/plate/plate.sdf";
 	const std::string cube_file = "examples/resources/plate/cube.sdf";

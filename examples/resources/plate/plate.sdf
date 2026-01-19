@@ -101,6 +101,7 @@
       <joint name="plate_pitch" type="revolute">
         <parent>link_roll</parent>
         <child>plate</child>
+        <pose>0.2 0 0 0 0 0</pose>
         <axis>
           <xyz>0 1 0</xyz>
           <limit><lower>-0.3</lower><upper>0.3</upper></limit>

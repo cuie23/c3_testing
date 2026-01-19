@@ -92,13 +92,20 @@ iC3::iC3(
     MatrixXd u_hat(Eigen::MatrixXd::Zero(n_u_, N_));
     MatrixXd c3_xs = MatrixXd::Zero(n_x_, N_);
 
+
     // Set initial guess to something kinda reasonable
     // TODO: make this a yaml option or use drake slerp
+    VectorXd gravity(5);
+    gravity << 0, 0, 53, 1.15, 0;
+    vector<VectorXd> u_nominal(N_, gravity);
+    vector<VectorXd> u_sol_for_penalization(N_, gravity);
+    vector<VectorXd> u_sol_for_penalization_copy(N_, VectorXd::Zero(n_u_));
+
     VectorXd x_diff = xd - x0;
     for (int k = 0; k < N_+1; k++) {
       x_hat.col(k) = x0 + k * x_diff / (N_+1);
 
-      if (k < N_) u_hat(2, k) = 5.5;
+      if (k < N_) u_hat.col(k) = gravity;
     }
 
     vector<MatrixXd> all_x_hats;
@@ -112,12 +119,6 @@ iC3::iC3(
         contact_geoms, controller_options_.lcs_factory_options);
 
     LCS lcs = MakeTimeVaryingLCS(x_hat, u_hat, lcs_factory);
-
-    VectorXd gravity(5);
-    gravity << 0, 0, 53, 0, 0;
-    vector<VectorXd> u_nominal(N_, gravity);
-    vector<VectorXd> u_sol_for_penalization(N_, gravity);
-    vector<VectorXd> u_sol_for_penalization_copy(N_, VectorXd::Zero(n_u_));
 
     vector<VectorXd> c3_quat_norms;
     for (int index : controller_options_.quaternion_indices) {
@@ -152,16 +153,16 @@ iC3::iC3(
       // Plate position constraints
       lower_bound[0] = -0.2;
       lower_bound[1] = -0.2;
-      lower_bound[2] = -0.2; 
+      lower_bound[2] = -0.4; 
       upper_bound[0] = 0.2;
       upper_bound[1] = 0.2;
       upper_bound[2] = 1;
       
       // Plate rotation constraints
-      lower_bound[3] = -0.8;
-      lower_bound[4] = -0.8;
-      upper_bound[3] = 0.8;
-      upper_bound[4] = 0.8;
+      lower_bound[3] = -0.3;
+      lower_bound[4] = -0.3;
+      upper_bound[3] = 0.3;
+      upper_bound[4] = 0.3;
 
       // lower_bound[9] = -0.4;
       // lower_bound[10] = -0.4;
