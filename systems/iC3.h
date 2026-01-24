@@ -75,6 +75,7 @@ private:
   pair<LCS, MatrixXd> DoLCSRolloutLastIter(VectorXd x0, MatrixXd u_hat, LCS last_lcs, LCSFactory factory);
  
   MatrixXd RolloutUHat(VectorXd x0, MatrixXd u_hat);
+  MatrixXd RolloutUHatFranka(VectorXd x0, MatrixXd u_hat);
 
   LCS MakeTimeVaryingLCS(MatrixXd x_hat, MatrixXd u_hat, LCSFactory factory);
 

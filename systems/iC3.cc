@@ -102,7 +102,7 @@ iC3::iC3(
 
     // VectorXd gravity(VectorXd::Zero(7));
     VectorXd gravity(5);
-    gravity << 0, 0, 5.3, 0.872, 0;
+    gravity << 0, 0, 5.88, 0, 0;
     vector<VectorXd> u_nominal(N_, gravity);
     vector<VectorXd> u_sol_for_penalization(N_, gravity);
     vector<VectorXd> u_sol_for_penalization_copy(N_, VectorXd::Zero(n_u_));
@@ -457,7 +457,7 @@ iC3::iC3(
 
         // std::cout << "x cost: " << x_cost << std::endl;
         std::cout << "cube position cost: " << cube_pos_cost << std::endl;
-        // std::cout << "plate position cost: " << plate_pos_cost << std::endl;
+        std::cout << "plate position cost: " << plate_pos_cost << std::endl;
         std::cout << "rotation cost: " << rot_cost << std::endl;
         std::cout << "position rollout cost: " << pos_cost_rollout << std::endl;
         std::cout << "avg rotation angle diff: " << rot_angle_diff_rollout / N_ << std::endl;
@@ -616,7 +616,49 @@ iC3::iC3(
 
   }
 
-  MatrixXd iC3::RolloutUHat(VectorXd x0, MatrixXd u_hat) {
+   MatrixXd iC3::RolloutUHat(VectorXd x0, MatrixXd u_hat) {
+    DiagramBuilder<double> builder;
+    auto [plant_sim, scene_graph] =
+        drake::multibody::AddMultibodyPlantSceneGraph(&builder, 0);
+    Parser parser(&plant_sim, &scene_graph);
+    
+    const std::string plate_file_lcs = "examples/resources/plate/plate.sdf";	
+    const std::string cube_file_lcs = "examples/resources/plate/cube.sdf";
+
+    parser.AddModels(plate_file_lcs);
+    parser.AddModels(cube_file_lcs);
+
+    plant_sim.Finalize();
+
+    auto* broadcaster = builder.AddSystem<InputSource>(u_hat, dt_, N_);
+    builder.Connect(broadcaster->get_output_port(), plant_sim.get_actuation_input_port());
+
+    auto diagram = builder.Build();
+    auto context = diagram->CreateDefaultContext();
+
+    auto& plant_context =
+      diagram->GetMutableSubsystemContext(plant_sim, context.get());
+    plant_sim.SetPositionsAndVelocities(&plant_context, x0);
+
+    drake::systems::Simulator<double> simulator(*diagram, std::move(context));
+    simulator.set_target_realtime_rate(1);
+    simulator.Initialize();
+
+    MatrixXd x_hat(n_x_, N_+1);
+    x_hat.col(0) = x0;
+
+    int idx = 1;
+    for (double t = 0.0; t < N_ * dt_ - 0.0001; t += dt_) {
+      simulator.AdvanceTo(t);
+      x_hat.col(idx) = plant_sim.GetPositionsAndVelocities(plant_context);
+      idx++;
+    }
+
+    return x_hat;
+
+  }
+
+  MatrixXd iC3::RolloutUHatFranka(VectorXd x0, MatrixXd u_hat) {
     DiagramBuilder<double> builder;
     auto [plant_sim, scene_graph] =
         drake::multibody::AddMultibodyPlantSceneGraph(&builder, 0);
