@@ -23,6 +23,8 @@
 #include <drake/systems/lcm/lcm_publisher_system.h>
 #include <drake/lcm/drake_lcm.h>
 #include <drake/systems/primitives/vector_log_sink.h>
+#include <drake/common/find_resource.h>
+
 #include <gflags/gflags.h>
 
 #include "systems/common/quaternion_error_hessian.h"
@@ -77,11 +79,14 @@ using drake::geometry::SceneGraph;
 using drake::multibody::AddMultibodyPlantSceneGraph;
 using drake::multibody::MultibodyPlant;
 using drake::multibody::Parser;
+using drake::multibody::ModelInstanceIndex;
 using drake::systems::DiagramBuilder;
 using drake::systems::rendering::MultibodyPositionToGeometryPose;
 using drake::systems::lcm::LcmPublisherSystem;
 using drake::systems::TriggerType;
 using drake::systems::TriggerTypeSet;
+using drake::math::RigidTransform;
+using drake::math::RotationMatrix;
 
 class TimedGravityCompGate final : public drake::systems::LeafSystem<double> {
  public:
@@ -1165,6 +1170,7 @@ int RunPlateTestiC3(drake::lcm::DrakeLcm& lcm) {
   vector<MatrixXd> x_traj = ic3_trajs[0];
   vector<MatrixXd> u_traj = ic3_trajs[1];
   vector<MatrixXd> c3_x_traj = ic3_trajs[2];
+  vector<MatrixXd> x_real_traj = ic3_trajs[3];
 
   // Publishes input std::vector<MatrixXd> as a lcmt_timestamped_saved_traj
   auto traj_source_x = builder.AddSystem<TrajToLcmSystem>(x_traj);
@@ -1173,6 +1179,8 @@ int RunPlateTestiC3(drake::lcm::DrakeLcm& lcm) {
   traj_source_u->set_name("traj_source_u");
   auto traj_source_c3_x = builder.AddSystem<TrajToLcmSystem>(c3_x_traj);
   traj_source_c3_x->set_name("traj_source_c3_x");
+  auto traj_source_x_real = builder.AddSystem<TrajToLcmSystem>(x_real_traj);
+  traj_source_x_real->set_name("traj_source_x_real");
 
   auto traj_publisher_x = builder.AddSystem(
       LcmPublisherSystem::Make<c3::lcmt_timestamped_saved_traj>(
@@ -1189,12 +1197,20 @@ int RunPlateTestiC3(drake::lcm::DrakeLcm& lcm) {
           "iC3_TRAJECTORY_C3", &lcm,
           TriggerTypeSet({TriggerType::kForced})));
 
+  auto traj_publisher_x_real = builder.AddSystem(
+      LcmPublisherSystem::Make<c3::lcmt_timestamped_saved_traj>(
+          "iC3_TRAJECTORY_X_REAL", &lcm,
+          TriggerTypeSet({TriggerType::kForced})));
+
   builder.Connect(traj_source_x->get_output_port(),
                     traj_publisher_x->get_input_port());
   builder.Connect(traj_source_u->get_output_port(),
                     traj_publisher_u->get_input_port());
   builder.Connect(traj_source_c3_x->get_output_port(),
                     traj_publisher_c3_x->get_input_port());
+  builder.Connect(traj_source_x_real->get_output_port(),
+                    traj_publisher_x_real->get_input_port());
+            
 	// Eigen::Vector4d q_vec = xd.segment(5, 4);
 	// Eigen::Quaterniond q(q_vec(0), q_vec(1), q_vec(2), q_vec(3));
 	// q.normalize();
@@ -1284,6 +1300,196 @@ int RunPlateTestiC3(drake::lcm::DrakeLcm& lcm) {
   return 0;
 }
 
+int RunFrankaTestiC3(drake::lcm::DrakeLcm& lcm) {
+  // Build the plant and scene graph for the pivoting system.
+  DiagramBuilder<double> plant_builder;
+  auto [plant_for_lcs, scene_graph_for_lcs] =
+      AddMultibodyPlantSceneGraph(&plant_builder, 0);
+  Parser parser_for_lcs(&plant_for_lcs, &scene_graph_for_lcs);
+
+  
+  const std::string franka_file_lcs = "examples/resources/plate/panda_arm.urdf";
+	const std::string plate_file_lcs = "examples/resources/plate/plate_end_effector.sdf";	
+  const std::string cube_file_lcs = "examples/resources/plate/cube.sdf";
+
+  ModelInstanceIndex franka_index = parser_for_lcs.AddModels(franka_file_lcs)[0];
+  ModelInstanceIndex end_effector_index = parser_for_lcs.AddModels(plate_file_lcs)[0];
+  parser_for_lcs.AddModels(cube_file_lcs);
+
+  RigidTransform<double> X_WI = RigidTransform<double>::Identity();
+  plant_for_lcs.WeldFrames(plant_for_lcs.world_frame(),
+                          plant_for_lcs.GetFrameByName("panda_link0"), X_WI);
+
+  Eigen::Vector3d tool_attachment_frame(0, 0, 0.107);
+  RigidTransform<double> T_EE_W =
+      RigidTransform<double>(drake::math::RotationMatrix<double>(),
+                             tool_attachment_frame);
+  plant_for_lcs.WeldFrames(
+      plant_for_lcs.GetFrameByName("panda_link7"),
+      plant_for_lcs.GetFrameByName("plate", end_effector_index), T_EE_W);
+
+  plant_for_lcs.Finalize();
+
+  // Build the plant diagram.
+  auto plant_diagram = plant_builder.Build();
+
+  // Retrieve collision geometries for relevant bodies.
+  drake::geometry::GeometryId plate_collision_geom =
+      plant_for_lcs.GetCollisionGeometriesForBody(
+          plant_for_lcs.GetBodyByName("plate"))[0];
+
+	std::vector<drake::geometry::GeometryId> cube_collision_geoms;
+  for (int i = 1; i <= 8; i++) {
+		cube_collision_geoms.push_back(
+			plant_for_lcs.GetCollisionGeometriesForBody(
+          plant_for_lcs.GetBodyByName("cube"))[i]);
+	}
+
+  // Define contact pairs for the LCS system.
+  std::vector<SortedPair<GeometryId>> contact_pairs;
+
+	for (GeometryId geom_id : cube_collision_geoms) {
+		contact_pairs.emplace_back(plate_collision_geom, geom_id);
+	}
+
+	for (const auto& pname : plant_for_lcs.GetPositionNames()) {
+		std::cout << pname << std::endl;
+	}
+	for (const auto& vname : plant_for_lcs.GetVelocityNames()) {
+		std::cout << vname << std::endl;
+	}
+
+  // Build the main diagram.
+  DiagramBuilder<double> builder;
+  auto [plant, scene_graph] = AddMultibodyPlantSceneGraph(&builder, 0.0001);
+  Parser parser(&plant, &scene_graph);
+  const std::string plate_file = "examples/resources/plate/plate.sdf";
+	const std::string cube_file = "examples/resources/plate/cube.sdf";
+
+  parser.AddModels(plate_file);
+  parser.AddModels(cube_file);
+  plant.Finalize();
+
+  // Load controller options and cost matrices.
+  C3ControllerOptions options = drake::yaml::LoadYamlFile<C3ControllerOptions>(
+      "examples/resources/plate/c3_controller_plate_franka_options.yaml");
+  iC3Options ic3_options = drake::yaml::LoadYamlFile<iC3Options>(
+      "examples/resources/plate/iC3_options_franka.yaml");
+  C3::CostMatrices cost = C3::CreateCostMatricesFromC3Options(
+      options.c3_options, options.lcs_factory_options.N);
+
+  // Create contexts for the plant and LCS factory system.
+  std::unique_ptr<drake::systems::Context<double>> plant_diagram_context =
+      plant_diagram->CreateDefaultContext();
+  auto plant_autodiff =
+      drake::systems::System<double>::ToAutoDiffXd(plant_for_lcs);
+  auto& plant_for_lcs_context = plant_diagram->GetMutableSubsystemContext(
+      plant_for_lcs, plant_diagram_context.get());
+  auto plant_context_autodiff = plant_autodiff->CreateDefaultContext(); 
+
+  auto ic3_controller = systems::iC3(plant_for_lcs, *plant_autodiff, cost, options, ic3_options);
+  
+  vector<vector<MatrixXd>> ic3_trajs = 
+    ic3_controller.ComputeTrajectory(plant_for_lcs_context, *plant_context_autodiff, contact_pairs);
+  vector<MatrixXd> x_traj = ic3_trajs[0];
+  vector<MatrixXd> u_traj = ic3_trajs[1];
+  vector<MatrixXd> c3_x_traj = ic3_trajs[2];
+  vector<MatrixXd> x_real_traj = ic3_trajs[3];
+
+  // Publishes input std::vector<MatrixXd> as a lcmt_timestamped_saved_traj
+  auto traj_source_x = builder.AddSystem<TrajToLcmSystem>(x_traj);
+  traj_source_x->set_name("traj_source_x");
+  auto traj_source_u = builder.AddSystem<TrajToLcmSystem>(u_traj);
+  traj_source_u->set_name("traj_source_u");
+  auto traj_source_c3_x = builder.AddSystem<TrajToLcmSystem>(c3_x_traj);
+  traj_source_c3_x->set_name("traj_source_c3_x");
+  auto traj_source_x_real = builder.AddSystem<TrajToLcmSystem>(x_real_traj);
+  traj_source_x_real->set_name("traj_source_x_real");
+
+  const auto& plate_body = plant_for_lcs.GetBodyByName("plate", end_effector_index);
+  vector<MatrixXd> plate_traj;
+  for (int i = 0; i < x_traj.size(); i++) {
+    MatrixXd traj_i = x_traj.at(i);
+
+    MatrixXd plate_traj_i(MatrixXd::Zero(7, traj_i.cols()));
+    for (int j = 0; j < traj_i.cols(); j++) {
+      VectorXd x_set(VectorXd::Zero(27));
+      plant_for_lcs.SetPositions(&plant_for_lcs_context, franka_index, traj_i.col(j).segment(0,7));
+      RigidTransformd X_WPlate = plant_for_lcs.EvalBodyPoseInWorld(plant_for_lcs_context, plate_body);
+
+      const drake::math::RotationMatrix<double>& R_WPlate = X_WPlate.rotation();
+      Eigen::Vector4d quat = R_WPlate.ToQuaternion().coeffs();    
+      Eigen::Vector3d position = X_WPlate.translation();
+
+      plate_traj_i.col(j).head(4) = quat;
+      plate_traj_i.col(j).tail(3) = position;
+    }
+    plate_traj.push_back(plate_traj_i);
+  }
+  auto traj_source_plate = builder.AddSystem<TrajToLcmSystem>(plate_traj);
+  traj_source_plate->set_name("traj_source_plate_real");
+
+  
+  auto traj_publisher_x = builder.AddSystem(
+      LcmPublisherSystem::Make<c3::lcmt_timestamped_saved_traj>(
+          "iC3_TRAJECTORY_X", &lcm,
+          TriggerTypeSet({TriggerType::kForced})));
+
+  auto traj_publisher_u = builder.AddSystem(
+      LcmPublisherSystem::Make<c3::lcmt_timestamped_saved_traj>(
+          "iC3_TRAJECTORY_U", &lcm,
+          TriggerTypeSet({TriggerType::kForced})));
+
+  auto traj_publisher_c3_x = builder.AddSystem(
+      LcmPublisherSystem::Make<c3::lcmt_timestamped_saved_traj>(
+          "iC3_TRAJECTORY_C3", &lcm,
+          TriggerTypeSet({TriggerType::kForced})));
+
+  auto traj_publisher_x_real = builder.AddSystem(
+      LcmPublisherSystem::Make<c3::lcmt_timestamped_saved_traj>(
+          "iC3_TRAJECTORY_X_REAL", &lcm,
+          TriggerTypeSet({TriggerType::kForced})));
+
+  auto traj_publisher_plate = builder.AddSystem(
+      LcmPublisherSystem::Make<c3::lcmt_timestamped_saved_traj>(
+          "iC3_TRAJECTORY_PLATE", &lcm,
+          TriggerTypeSet({TriggerType::kForced})));
+
+  builder.Connect(traj_source_x->get_output_port(),
+                    traj_publisher_x->get_input_port());
+  builder.Connect(traj_source_u->get_output_port(),
+                    traj_publisher_u->get_input_port());
+  builder.Connect(traj_source_c3_x->get_output_port(),
+                    traj_publisher_c3_x->get_input_port());
+  builder.Connect(traj_source_x_real->get_output_port(),
+                    traj_publisher_x_real->get_input_port());
+  builder.Connect(traj_source_plate->get_output_port(),
+                    traj_publisher_plate->get_input_port());
+                    
+  // Build the diagram.
+  auto diagram = builder.Build();
+
+  if (!FLAGS_diagram_path.empty())
+    c3::systems::common::DrawAndSaveDiagramGraph(*diagram, FLAGS_diagram_path);
+
+  // Create a default context for the diagram.
+  auto diagram_context = diagram->CreateDefaultContext();
+
+
+  std::signal(SIGINT, SigIntHandler);
+  auto output = diagram->AllocateOutput();
+
+  const std::chrono::milliseconds period(10);
+  while (g_run.load()) {
+    diagram->CalcOutput(*diagram_context, output.get()); 
+    diagram->ForcedPublish(*diagram_context);
+    std::this_thread::sleep_for(period);
+  }
+
+
+  return 0;
+}
+
 int main(int argc, char* argv[]) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   drake::lcm::DrakeLcm lcm(FLAGS_lcm_url);
@@ -1305,6 +1511,9 @@ int main(int argc, char* argv[]) {
   } else if (FLAGS_experiment_type == "iC3") {
     std::cout << "Running iC3 Test..." << std::endl;
     return RunPlateTestiC3(lcm);
+  } else if (FLAGS_experiment_type == "iC3_franka") {
+    std::cout << "Running franka iC3 Test..." << std::endl;
+    return RunFrankaTestiC3(lcm);
   } else {
     std::cerr
         << "Unknown experiment type: " << FLAGS_experiment_type

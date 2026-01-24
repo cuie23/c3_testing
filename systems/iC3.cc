@@ -11,11 +11,15 @@
 #include "common/quaternion_error_hessian.h"
 
 #include "drake/common/text_logging.h"
+#include <drake/multibody/parsing/parser.h>
 
 using drake::multibody::ModelInstanceIndex;
 using drake::systems::BasicVector;
 using drake::systems::Context;
 using drake::systems::DiscreteValues;
+using drake::systems::DiagramBuilder;
+using drake::math::RigidTransform;
+using drake::multibody::Parser;
 using Eigen::MatrixXd;
 using Eigen::MatrixXf;
 using Eigen::VectorXd;
@@ -91,12 +95,14 @@ iC3::iC3(
     MatrixXd x_hat = x0.replicate(1, N_+1);
     MatrixXd u_hat(Eigen::MatrixXd::Zero(n_u_, N_));
     MatrixXd c3_xs = MatrixXd::Zero(n_x_, N_);
-
+    MatrixXd x_real = MatrixXd::Zero(n_x_, N_);
 
     // Set initial guess to something kinda reasonable
     // TODO: make this a yaml option or use drake slerp
+
+    // VectorXd gravity(VectorXd::Zero(7));
     VectorXd gravity(5);
-    gravity << 0, 0, 53, 1.15, 0;
+    gravity << 0, 0, 5.3, 0.872, 0;
     vector<VectorXd> u_nominal(N_, gravity);
     vector<VectorXd> u_sol_for_penalization(N_, gravity);
     vector<VectorXd> u_sol_for_penalization_copy(N_, VectorXd::Zero(n_u_));
@@ -111,9 +117,11 @@ iC3::iC3(
     vector<MatrixXd> all_x_hats;
     vector<MatrixXd> all_u_hats;
     vector<MatrixXd> all_c3_x;
+    vector<MatrixXd> all_x_real;
 
     all_x_hats.push_back(x_hat);
     all_u_hats.push_back(u_hat);
+    all_x_real.push_back(x_real);
 
     LCSFactory lcs_factory(plant_, context, plant_ad_, context_ad, 
         contact_geoms, controller_options_.lcs_factory_options);
@@ -131,11 +139,7 @@ iC3::iC3(
       std::cout << "iC3 iteration " << iter << std::endl;
       UpdateQuaternionCosts(x_hat, xd, c3_quat_norms);
 
-      MatrixXd Q_test = Q_[6];
-
-      // MatrixXd cooked = (Q_[6] - Q_test);
-      // std::cout << cooked << std::endl; 
-
+      
       // Add actuation/position limits
       Eigen::MatrixXd A = Eigen::MatrixXd::Zero(23, 23);
       A(0, 0) = 1;
@@ -153,21 +157,21 @@ iC3::iC3(
       // Plate position constraints
       lower_bound[0] = -0.2;
       lower_bound[1] = -0.2;
-      lower_bound[2] = -0.4; 
+      lower_bound[2] = -0.2; 
       upper_bound[0] = 0.2;
       upper_bound[1] = 0.2;
-      upper_bound[2] = 1;
+      upper_bound[2] = 0.2;
       
       // Plate rotation constraints
-      lower_bound[3] = -0.3;
-      lower_bound[4] = -0.3;
-      upper_bound[3] = 0.3;
-      upper_bound[4] = 0.3;
+      lower_bound[3] = -0.5;
+      lower_bound[4] = -0.5;
+      upper_bound[3] = 0.5;
+      upper_bound[4] = 0.5;
 
       // lower_bound[9] = -0.4;
       // lower_bound[10] = -0.4;
       // lower_bound[11] = -0.2; 
-      // upper_bound[9] = 0.4;
+      // upper_bound[9] = 0.4;lower_bound
       // upper_bound[10] = 0.4;
       // upper_bound[11] = 1;
 
@@ -175,16 +179,81 @@ iC3::iC3(
       Eigen::MatrixXd A_u = Eigen::MatrixXd::Zero(5, 5);
       // A_u(0, 0) = 0;
       // A_u(1, 1) = 0;
-      A_u(2, 2) = 1;
-      // A_u(3, 3) = 1;
-      // A_u(4, 4) = 1;
+      // A_u(2, 2) = 1;
+      A_u(3, 3) = 1;
+      A_u(4, 4) = 1;
 
       Eigen::VectorXd lower_bound_u(Eigen::VectorXd::Zero(5));
       Eigen::VectorXd upper_bound_u(Eigen::VectorXd::Zero(5));
-      lower_bound_u << 0, 0, -40, -80, -80;
-      upper_bound_u << 0, 0, 120, 80, 80; // plate + block is ~5.5 N 
+      lower_bound_u << 0, 0, 0, -3.32, -3.32;
+      upper_bound_u << 0, 0, 0, 5, 5; // plate + block is ~5.5 N 
+      
 
-                 
+
+      /* Constraints for franka
+
+      std::cout << "n_x_: " << n_x_ << std::endl;
+      std::cout << "n_u_: " << n_u_ << std::endl;
+
+      // Add actuation/position limits
+      Eigen::MatrixXd A = Eigen::MatrixXd::Zero(n_x_, n_x_);
+      for (int joint = 0; joint < 7; joint++) {
+        A(joint) = 1;
+        //A(joint + 14) = 1;
+      }
+
+      
+
+      Eigen::VectorXd lower_bound(Eigen::VectorXd::Zero(n_x_));
+      Eigen::VectorXd upper_bound(Eigen::VectorXd::Zero(n_x_));
+
+      // Joint limits
+      lower_bound[0] = -165 * M_PI;
+      lower_bound[1] = -105 * M_PI;
+      lower_bound[2] = -165 * M_PI; 
+      lower_bound[3] = -176 * M_PI;
+      lower_bound[4] = -165 * M_PI;
+      lower_bound[5] = 25 * M_PI;
+      lower_bound[6] = -175 * M_PI;
+
+      upper_bound[0] = 165 * M_PI / 180;
+      upper_bound[1] = 105 * M_PI / 180;
+      upper_bound[2] = 165 * M_PI / 180;
+      upper_bound[3] = -7 * M_PI / 180;
+      upper_bound[4] = 165 * M_PI / 180;
+      upper_bound[5] = 265 * M_PI / 180;
+      upper_bound[6] = 175 * M_PI / 180;
+
+      // Joint velocity limits
+      lower_bound[14] = -150 * M_PI / 180;
+      lower_bound[15] = -150 * M_PI / 180;
+      lower_bound[16] = -150 * M_PI / 180; 
+      lower_bound[17] = -150 * M_PI / 180;
+      lower_bound[18] = -301 * M_PI / 180;
+      lower_bound[19] = -301 * M_PI / 180;
+      lower_bound[20] = -301 * M_PI / 180;
+
+      upper_bound[14] = 150 * M_PI / 180;
+      upper_bound[15] = 150 * M_PI / 180;
+      upper_bound[16] = 150 * M_PI / 180;
+      upper_bound[17] = 150 * M_PI / 180;
+      upper_bound[18] = 301 * M_PI / 180;
+      upper_bound[19] = 301 * M_PI / 180;
+      upper_bound[20] = 301 * M_PI / 180;
+      
+
+      Eigen::MatrixXd A_u = Eigen::MatrixXd::Zero(n_u_, n_u_);
+      // A_u(0, 0) = 0;
+      // A_u(1, 1) = 0;
+      // A_u(2, 2) = 1;
+      // A_u(3, 3) = 1;
+      // A_u(4, 4) = 1;
+
+      Eigen::VectorXd lower_bound_u(Eigen::VectorXd::Zero(n_u_));
+      Eigen::VectorXd upper_bound_u(Eigen::VectorXd::Zero(n_u_));
+
+      */
+
       vector<Eigen::VectorXd> x_sol;
       vector<Eigen::VectorXd> u_sol;
         
@@ -284,6 +353,7 @@ iC3::iC3(
       lcs = output.first;
       x_hat = output.second;
 
+      x_real = RolloutUHat(x0, u_hat);
       // normalize xhat quaternions
       // for (int i = 0; i < x_hat.cols(); i++) {
       //   for (int index : controller_options_.quaternion_indices) {
@@ -294,9 +364,10 @@ iC3::iC3(
       all_x_hats.push_back(x_hat);
       all_u_hats.push_back(u_hat);
       all_c3_x.push_back(c3_xs);
+      all_x_real.push_back(x_real);
 
       // Print costs
-      if (true || (ic3_options_.print_costs && iter % 3 == 2)) {
+      if (ic3_options_.print_costs) {
         double x_cost = 0;
         double cube_pos_cost = 0;
         double plate_pos_cost = 0;
@@ -317,6 +388,8 @@ iC3::iC3(
            xds.push_back(target_k);
         }
 
+
+        int quat_idx = controller_options_.quaternion_indices[0];
         for (int i = 0; i < N_; i++) {
           VectorXd x_curr = c3_xs.col(i);
           VectorXd x_rollout = x_hat.col(i);
@@ -325,14 +398,14 @@ iC3::iC3(
           x_cost += (x_curr - xd).transpose() * Q_[i] * (x_curr - xd);
          // std::cout << "i: " << i << ", cost: " << (x_curr - xd).transpose() * Q_[i] * (x_curr - xd) << std::endl;
 
-          rot_cost += (x_curr.segment(5, 4) - xd.segment(5, 4)).transpose() * 
-              Q_[i].block(5, 5, 4, 4) * (x_curr.segment(5, 4) - xd.segment(5, 4));
+          rot_cost += (x_curr.segment(quat_idx, 4) - xd.segment(quat_idx, 4)).transpose() * 
+              Q_[i].block(quat_idx, quat_idx, 4, 4) * (x_curr.segment(quat_idx, 4) - xd.segment(quat_idx, 4));
          
           // std::cout << "i: " << i << ", rot cost: " << (x_curr.segment(5, 4) - xd.segment(5, 4)).transpose() * 
           //     Q_[i].block(5, 5, 4, 4) * (x_curr.segment(5, 4) - xd.segment(5, 4)) << std::endl;
 
-          Eigen::Vector4d v_des = xd.segment<4>(5).normalized();
-          Eigen::Vector4d v_rollout = x_rollout.segment<4>(5).normalized();
+          Eigen::Vector4d v_des = xd.segment<4>(quat_idx).normalized();
+          Eigen::Vector4d v_rollout = x_rollout.segment<4>(quat_idx).normalized();
           Eigen::Quaterniond quat_des(v_des[0], v_des[1], v_des[2], v_des[3]);
           Eigen::Quaterniond quat_rollout(v_rollout[0], v_rollout[1], v_rollout[2], v_rollout[3]);
 
@@ -342,8 +415,8 @@ iC3::iC3(
           double angle_diff_deg = angle_diff * 180.0 / M_PI;
           rot_angle_diff_rollout += angle_diff_deg;
 
-          Eigen::Quaterniond q_curr(x_curr(5), x_curr(6), x_curr(7), x_curr(8));
-          Eigen::Quaterniond q_des(xd(5), xd(6), xd(7), xd(8));
+          Eigen::Quaterniond q_curr(x_curr(quat_idx), x_curr(quat_idx+1), x_curr(quat_idx+2), x_curr(quat_idx+3));
+          Eigen::Quaterniond q_des(xd(quat_idx), xd(quat_idx+1), xd(quat_idx+2), xd(quat_idx+3));
           Eigen::AngleAxisd angle_axis(q_des * q_curr.inverse());
           double angle = angle_axis.angle();
 
@@ -352,11 +425,12 @@ iC3::iC3(
           plate_pos_cost += (x_curr.segment(0, 3) - xd.segment(0, 3)).transpose() * 
               Q_[i].block(0, 0, 3, 3) * (x_curr.segment(0, 3) - xd.segment(0, 3));
 
-          cube_pos_cost += (x_curr.segment(9, 3) - xd.segment(9, 3)).transpose() * 
-              Q_[i].block(9, 9, 3, 3) * (x_curr.segment(9, 3) - xd.segment(9, 3));
+          int cube_pos_idx = 9;
+          cube_pos_cost += (x_curr.segment(cube_pos_idx, 3) - xd.segment(cube_pos_idx, 3)).transpose() * 
+              Q_[i].block(cube_pos_idx, cube_pos_idx, 3, 3) * (x_curr.segment(cube_pos_idx, 3) - xd.segment(cube_pos_idx, 3));
 
-          pos_cost_rollout += (x_rollout.segment(9, 3) - xd.segment(9, 3)).transpose() * 
-              Q_[i].block(9, 9, 3, 3) * (x_rollout.segment(9, 3) - xd.segment(9, 3));
+          pos_cost_rollout += (x_rollout.segment(cube_pos_idx, 3) - xd.segment(cube_pos_idx, 3)).transpose() * 
+              Q_[i].block(cube_pos_idx, cube_pos_idx, 3, 3) * (x_rollout.segment(cube_pos_idx, 3) - xd.segment(cube_pos_idx, 3));
           
           // pos_cost += (x_curr.segment(0, 3) - xd.segment(0, 3)).transpose() * 
           //     Q_[i].block(0, 0, 3, 3) * (x_curr.segment(0, 3) - xd.segment(0, 3));
@@ -381,11 +455,11 @@ iC3::iC3(
           //std::cout << "u cost " << i << ": " << (u_curr - u_prev).transpose() * R_[i] * (u_curr - u_prev) << std::endl;;
         } 
 
-        std::cout << "x cost: " << x_cost << std::endl;
+        // std::cout << "x cost: " << x_cost << std::endl;
         std::cout << "cube position cost: " << cube_pos_cost << std::endl;
-        std::cout << "plate position cost: " << plate_pos_cost << std::endl;
+        // std::cout << "plate position cost: " << plate_pos_cost << std::endl;
         std::cout << "rotation cost: " << rot_cost << std::endl;
-        //std::cout << "position rollout cost: " << pos_cost_rollout << std::endl;
+        std::cout << "position rollout cost: " << pos_cost_rollout << std::endl;
         std::cout << "avg rotation angle diff: " << rot_angle_diff_rollout / N_ << std::endl;
         std::cout << "u cost " << u_cost << std::endl;
 
@@ -430,10 +504,13 @@ iC3::iC3(
       std::cout << "u_hat " << i << ": " << u_hat.col(i).transpose() << std::endl;
     }
   
+    
+
     vector<vector<MatrixXd>> outputs;
     outputs.push_back(all_x_hats);
     outputs.push_back(all_u_hats);
     outputs.push_back(all_c3_x);
+    outputs.push_back(all_x_real);
 
     return outputs;
   }
@@ -539,6 +616,65 @@ iC3::iC3(
 
   }
 
+  MatrixXd iC3::RolloutUHat(VectorXd x0, MatrixXd u_hat) {
+    DiagramBuilder<double> builder;
+    auto [plant_sim, scene_graph] =
+        drake::multibody::AddMultibodyPlantSceneGraph(&builder, 0);
+    Parser parser(&plant_sim, &scene_graph);
+
+    
+    const std::string franka_file_lcs = "examples/resources/plate/panda_arm.urdf";
+    const std::string plate_file_lcs = "examples/resources/plate/plate_end_effector.sdf";	
+    const std::string cube_file_lcs = "examples/resources/plate/cube.sdf";
+
+    parser.AddModels(franka_file_lcs);
+    ModelInstanceIndex end_effector_index = parser.AddModels(plate_file_lcs)[0];
+    parser.AddModels(cube_file_lcs);
+
+    RigidTransform<double> X_WI = RigidTransform<double>::Identity();
+    plant_sim.WeldFrames(plant_sim.world_frame(),
+                         plant_sim.GetFrameByName("panda_link0"), X_WI);
+
+    Eigen::Vector3d tool_attachment_frame(0, 0, 0.107);
+    RigidTransform<double> T_EE_W =
+        RigidTransform<double>(drake::math::RotationMatrix<double>(),
+                              tool_attachment_frame);
+    plant_sim.WeldFrames(
+        plant_sim.GetFrameByName("panda_link7"),
+        plant_sim.GetFrameByName("plate", end_effector_index), T_EE_W);
+
+    plant_sim.Finalize();
+
+
+    auto* broadcaster = builder.AddSystem<InputSource>(u_hat, dt_, N_);
+    builder.Connect(broadcaster->get_output_port(), plant_sim.get_actuation_input_port());
+
+    auto diagram = builder.Build();
+    auto context = diagram->CreateDefaultContext();
+
+    auto& plant_context =
+      diagram->GetMutableSubsystemContext(plant_sim, context.get());
+    plant_sim.SetPositionsAndVelocities(&plant_context, x0);
+
+    drake::systems::Simulator<double> simulator(*diagram, std::move(context));
+    simulator.set_target_realtime_rate(1);
+    simulator.Initialize();
+
+    MatrixXd x_hat(n_x_, N_+1);
+    x_hat.col(0) = x0;
+
+    int idx = 1;
+    for (double t = 0.0; t < N_ * dt_ - 0.0001; t += dt_) {
+      simulator.AdvanceTo(t);
+      x_hat.col(idx) = plant_sim.GetPositionsAndVelocities(plant_context);
+      idx++;
+    }
+
+    return x_hat;
+
+  }
+
+
   LCS iC3::MakeTimeVaryingLCS(MatrixXd x_hat, MatrixXd u_hat, LCSFactory factory) {
     vector<Eigen::MatrixXd> A;
     vector<Eigen::MatrixXd> B;
@@ -630,7 +766,7 @@ iC3::iC3(
 
         Eigen::MatrixXd quat_regularizer_1 = std::max(0.0, -min_eigenval) * Eigen::MatrixXd::Identity(4, 4);
         Eigen::MatrixXd quat_regularizer_2 = quat_des_i * quat_des_i.transpose();
-        Eigen::MatrixXd quat_regularizer_3 = 1e-8 * Eigen::MatrixXd::Identity(4, 4);
+        Eigen::MatrixXd quat_regularizer_3 = 1e-4 * Eigen::MatrixXd::Identity(4, 4);
 
         double discount_factor = 1;
         Q_[i].block(index, index, 4, 4) = 

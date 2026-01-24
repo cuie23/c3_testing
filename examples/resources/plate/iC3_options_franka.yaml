@@ -1,5 +1,5 @@
-num_iters: 10
-add_position_constraints: true
+num_iters: 5
+add_position_constraints: false
 add_input_constraints: false
 early_termination: false
 

@@ -321,9 +321,17 @@ void C3::Solve(const VectorXd& x0) {
     for (int i = 0; i < N_penalize_input_change_; ++i) {
       // Penalize deviation from previous input solution:  input cost is
       // (u-u_prev)' * R * (u-u_prev).
+      // input_costs_[i]->UpdateCoefficients(
+      //     2 * cost_matrices_.R.at(i),
+      //     -2 * cost_matrices_.R.at(i) * u_sol_->at(i));
+
+      const double w_sol = 1.0;
+      const double w_des = 3.0;
+
       input_costs_[i]->UpdateCoefficients(
-          2 * cost_matrices_.R.at(i),
-          -2 * cost_matrices_.R.at(i) * u_sol_->at(i));
+          2 * (w_sol + w_des) * cost_matrices_.R.at(i),
+          -2 * cost_matrices_.R.at(i) *
+              (w_sol * u_sol_->at(i) + w_des * u_desired_.at(i)));;
     }
   }
   VectorXd delta_init = VectorXd::Zero(n_z_);
@@ -470,8 +478,11 @@ vector<VectorXd> C3::SolveQP(const VectorXd& x0, const vector<MatrixXd>& G,
   MathematicalProgramResult result = osqp_.Solve(prog_);
 
   if (!result.is_success()) {
-    drake::log()->warn("C3::SolveQP failed to solve the QP with status: {}",
-                       result.get_solution_result());
+      const auto& details = result.get_solver_details<drake::solvers::OsqpSolver>();
+      
+      drake::log()->warn("OSQP Status: {}", details.status_val); 
+      drake::log()->warn("Iterations: {}", details.iter);
+      
   }
 
   StoreQPResults(result, admm_iteration, is_final_solve);

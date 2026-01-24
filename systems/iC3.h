@@ -13,14 +13,46 @@
 #include "systems/framework/c3_output.h"
 #include "systems/framework/timestamped_vector.h"
 
+#include "drake/systems/analysis/simulator.h"
 #include "drake/multibody/plant/multibody_plant.h"
 #include "drake/systems/framework/leaf_system.h"
 
 using std::vector;
 using std::pair;
+using drake::systems::BasicVector;
+using drake::systems::Context;
+using drake::multibody::MultibodyPlant;
 
 namespace c3 {
 namespace systems {
+
+// For simulated rollouts
+class InputSource : public drake::systems::LeafSystem<double> {
+public:
+  InputSource(MatrixXd u_hat, double dt, int N)  
+  : u_hat_(u_hat),
+    dt_(dt),
+    N_(N) 
+  {
+    this->DeclareVectorOutputPort("u curr", u_hat_.rows(),
+                                  &InputSource::CalcOutput);
+  }
+
+private:
+  void CalcOutput(const Context<double>& context,
+                  BasicVector<double>* output) const {
+    double t = context.get_time();
+    if (t < dt_ * N_) {
+      int segment = (int)(t / dt_);
+      output->get_mutable_value() = u_hat_.col(segment);
+    } else {
+      output->get_mutable_value() = VectorXd::Zero(u_hat_.rows());
+    }
+  }
+  MatrixXd u_hat_;
+  double dt_;
+  int N_;
+};
 
 class iC3 : public drake::systems::LeafSystem<double> {
 
@@ -42,10 +74,13 @@ private:
   pair<LCS, MatrixXd> DoLCSRollout(VectorXd x0, MatrixXd u_hat, LCSFactory factory);
   pair<LCS, MatrixXd> DoLCSRolloutLastIter(VectorXd x0, MatrixXd u_hat, LCS last_lcs, LCSFactory factory);
  
+  MatrixXd RolloutUHat(VectorXd x0, MatrixXd u_hat);
+
   LCS MakeTimeVaryingLCS(MatrixXd x_hat, MatrixXd u_hat, LCSFactory factory);
 
   // removes num_timesteps_to_remove timesteps from the front of the LCS
   LCS ShortenLCSFront(LCS lcs, int num_timesteps_to_remove);
+
 
   C3::CostMatrices ShortenCostsFront(int num_timesteps_to_remove);
 
