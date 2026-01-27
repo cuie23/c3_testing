@@ -80,8 +80,8 @@
         <axis>
           <xyz>0 0 1</xyz>
           <limit>
-            <effort>5.0 </effort>
-            <velocity>1.5</velocity>
+            <effort>50.0 </effort>
+            <velocity>5</velocity>
             <lower> -100.0 </lower>
             <upper> 100.0 </upper>
           </limit>  

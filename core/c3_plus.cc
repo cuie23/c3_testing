@@ -112,7 +112,7 @@ VectorXd C3Plus::SolveSingleProjection(const MatrixXd& U,
   VectorXd w_lambda_vec = U.block(n_x_, n_x_, n_lambda_, n_lambda_).diagonal();
 
   // Throw an error if any weights are negative.
-  if (w_eta_vec.minCoeff() < 0 || w_lambda_vec.minCoeff() < 0) {
+  if (w_eta_vec.size() > 0 && (w_eta_vec.minCoeff() < 0 || w_lambda_vec.minCoeff() < 0)) {
     throw std::runtime_error(
         "Negative weights in the cost matrix U are not allowed.");
   }

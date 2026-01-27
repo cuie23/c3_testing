@@ -61,7 +61,8 @@ public:
     drake::multibody::MultibodyPlant<double>& plant,
     drake::multibody::MultibodyPlant<drake::AutoDiffXd>& plant_ad,
     C3::CostMatrices& costs, 
-    C3ControllerOptions controller_options, iC3Options ic3_options);
+    C3ControllerOptions controller_options, iC3Options ic3_options, 
+    bool is_franka);
 
   vector<vector<MatrixXd>> ComputeTrajectory(
     drake::systems::Context<double>& context,
@@ -114,6 +115,7 @@ private:
   mutable std::vector<Eigen::MatrixXd> U_;  ///< Constraint matrices.
 
   int N_;  ///< Horizon length.
+  bool is_franka_;
 
 };
 

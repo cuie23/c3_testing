@@ -68,15 +68,15 @@ c3_options:
 
 
   q_vector: [500, 500, 500,                # plate pos
-             10, 10,                    # plate rot
+             300, 300,                    # plate rot
              1, 1, 1, 1,    # cube rot
-             400, 400, 150,           # cube pos              
-             1, 1, 1,                # plate velo
+             400, 400, 100,           # cube pos              
+             5, 5, 1,                # plate velo
              10, 10,                    # plate ang velo
-             1, 1, 1,             # cube ang velo
+             5, 5, 5,             # cube ang velo
              1, 1, 1]                # cube velo
 
-  r_vector: [40, 40, 15, 30, 30]  
+  r_vector: [40, 40, 10, 20, 20]  
   
   #Penalty on matching projected variables
   g_x: [10, 10, 10, 50, 50, 10, 10, 10, 10, 10, 10, 10, 1 , 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]

@@ -32,12 +32,13 @@ iC3::iC3(
     drake::multibody::MultibodyPlant<double>& plant,
     drake::multibody::MultibodyPlant<drake::AutoDiffXd>& plant_ad,
     C3::CostMatrices& costs, 
-    C3ControllerOptions controller_options, iC3Options ic3_options)
+    C3ControllerOptions controller_options, iC3Options ic3_options, bool is_franka)
     : plant_(plant),
       plant_ad_(plant_ad),
       controller_options_(controller_options),
       ic3_options_(ic3_options),
-      N_(controller_options_.lcs_factory_options.N) {
+      N_(controller_options_.lcs_factory_options.N),
+      is_franka_(is_franka) {
   this->set_name("iC3");
 
   // Initialize dimensions
@@ -50,6 +51,8 @@ iC3::iC3(
   // Determine the size of lambda based on the contact model
   n_lambda_ = multibody::LCSFactory::GetNumContactVariables(
       controller_options_.lcs_factory_options);
+
+  std::cout << "n lambda: " << n_lambda_ << std::endl;
 
   // Placeholder vector for initialization
   VectorXd zeros = VectorXd::Zero(n_x_ + n_lambda_ + n_u_);
@@ -99,10 +102,13 @@ iC3::iC3(
 
     // Set initial guess to something kinda reasonable
     // TODO: make this a yaml option or use drake slerp
-
-    // VectorXd gravity(VectorXd::Zero(7));
-    VectorXd gravity(5);
-    gravity << 0, 0, 5.88, 0, 0;
+    VectorXd gravity;
+    if (is_franka_) {
+      gravity = VectorXd::Zero(7);
+    } else {
+      gravity = VectorXd::Zero(5);
+      gravity[2] = 5.88;
+    }
     vector<VectorXd> u_nominal(N_, gravity);
     vector<VectorXd> u_sol_for_penalization(N_, gravity);
     vector<VectorXd> u_sol_for_penalization_copy(N_, VectorXd::Zero(n_u_));
@@ -141,118 +147,108 @@ iC3::iC3(
 
       
       // Add actuation/position limits
-      Eigen::MatrixXd A = Eigen::MatrixXd::Zero(23, 23);
-      A(0, 0) = 1;
-      A(1, 1) = 1;
-      A(2, 2) = 1;
-      A(3, 3) = 1;
-      A(4, 4) = 1;
-      // A(9, 9) = 1;
-      // A(10, 10) = 1;
-      //A(11, 11) = 1;
-
-      Eigen::VectorXd lower_bound(Eigen::VectorXd::Zero(23));
-      Eigen::VectorXd upper_bound(Eigen::VectorXd::Zero(23));
-
-      // Plate position constraints
-      lower_bound[0] = -0.2;
-      lower_bound[1] = -0.2;
-      lower_bound[2] = -0.2; 
-      upper_bound[0] = 0.2;
-      upper_bound[1] = 0.2;
-      upper_bound[2] = 0.2;
-      
-      // Plate rotation constraints
-      lower_bound[3] = -0.5;
-      lower_bound[4] = -0.5;
-      upper_bound[3] = 0.5;
-      upper_bound[4] = 0.5;
-
-      // lower_bound[9] = -0.4;
-      // lower_bound[10] = -0.4;
-      // lower_bound[11] = -0.2; 
-      // upper_bound[9] = 0.4;lower_bound
-      // upper_bound[10] = 0.4;
-      // upper_bound[11] = 1;
-
-      // Actuation limits
-      Eigen::MatrixXd A_u = Eigen::MatrixXd::Zero(5, 5);
-      // A_u(0, 0) = 0;
-      // A_u(1, 1) = 0;
-      // A_u(2, 2) = 1;
-      A_u(3, 3) = 1;
-      A_u(4, 4) = 1;
-
-      Eigen::VectorXd lower_bound_u(Eigen::VectorXd::Zero(5));
-      Eigen::VectorXd upper_bound_u(Eigen::VectorXd::Zero(5));
-      lower_bound_u << 0, 0, 0, -3.32, -3.32;
-      upper_bound_u << 0, 0, 0, 5, 5; // plate + block is ~5.5 N 
-      
-
-
-      /* Constraints for franka
-
       std::cout << "n_x_: " << n_x_ << std::endl;
       std::cout << "n_u_: " << n_u_ << std::endl;
+      MatrixXd A(MatrixXd::Zero(n_x_, n_x_));
+      MatrixXd A_u(MatrixXd::Zero(n_u_, n_u_));
 
-      // Add actuation/position limits
-      Eigen::MatrixXd A = Eigen::MatrixXd::Zero(n_x_, n_x_);
-      for (int joint = 0; joint < 7; joint++) {
-        A(joint) = 1;
-        //A(joint + 14) = 1;
+      VectorXd lower_bound(VectorXd::Zero(n_x_));
+      VectorXd upper_bound(VectorXd::Zero(n_x_));
+      VectorXd lower_bound_u(VectorXd::Zero(n_u_));
+      VectorXd upper_bound_u(VectorXd::Zero(n_u_));
+
+      if (is_franka_) {
+        // Add actuation/position limits
+        Eigen::MatrixXd A = Eigen::MatrixXd::Zero(n_x_, n_x_);
+        for (int joint = 0; joint < 7; joint++) {
+          A(joint) = 1;
+          //A(joint + 14) = 1;
+        }
+
+        // Joint limits
+        lower_bound[0] = -165 * M_PI;
+        lower_bound[1] = -105 * M_PI;
+        lower_bound[2] = -165 * M_PI; 
+        lower_bound[3] = -176 * M_PI;
+        lower_bound[4] = -165 * M_PI;
+        lower_bound[5] = 25 * M_PI;
+        lower_bound[6] = -175 * M_PI;
+
+        upper_bound[0] = 165 * M_PI / 180;
+        upper_bound[1] = 105 * M_PI / 180;
+        upper_bound[2] = 165 * M_PI / 180;
+        upper_bound[3] = -7 * M_PI / 180;
+        upper_bound[4] = 165 * M_PI / 180;
+        upper_bound[5] = 265 * M_PI / 180;
+        upper_bound[6] = 175 * M_PI / 180;
+
+        // Joint velocity limits
+        lower_bound[14] = -150 * M_PI / 180;
+        lower_bound[15] = -150 * M_PI / 180;
+        lower_bound[16] = -150 * M_PI / 180; 
+        lower_bound[17] = -150 * M_PI / 180;
+        lower_bound[18] = -301 * M_PI / 180;
+        lower_bound[19] = -301 * M_PI / 180;
+        lower_bound[20] = -301 * M_PI / 180;
+
+        upper_bound[14] = 150 * M_PI / 180;
+        upper_bound[15] = 150 * M_PI / 180;
+        upper_bound[16] = 150 * M_PI / 180;
+        upper_bound[17] = 150 * M_PI / 180;
+        upper_bound[18] = 301 * M_PI / 180;
+        upper_bound[19] = 301 * M_PI / 180;
+        upper_bound[20] = 301 * M_PI / 180;
+        
+
+        // A_u(0, 0) = 0;
+        // A_u(1, 1) = 0;
+        // A_u(2, 2) = 1;
+        // A_u(3, 3) = 1;
+        // A_u(4, 4) = 1;
+
+      } else {
+        Eigen::MatrixXd A = Eigen::MatrixXd::Zero(23, 23);
+        A(0, 0) = 1;
+        A(1, 1) = 1;
+        A(2, 2) = 1;
+        A(3, 3) = 1;
+        A(4, 4) = 1;
+        // A(9, 9) = 1;
+        // A(10, 10) = 1;
+        //A(11, 11) = 1;
+
+        // Plate position constraints
+        lower_bound[0] = -0.2;
+        lower_bound[1] = -0.2;
+        lower_bound[2] = -0.1; 
+        upper_bound[0] = 0.2;
+        upper_bound[1] = 0.2;
+        upper_bound[2] = 0.5;
+        
+        // Plate rotation constraints
+        lower_bound[3] = -0.5;
+        lower_bound[4] = -0.5;
+        upper_bound[3] = 0.5;
+        upper_bound[4] = 0.5;
+
+        // lower_bound[9] = -0.4;
+        // lower_bound[10] = -0.4;
+        // lower_bound[11] = -0.2; 
+        // upper_bound[9] = 0.4;
+        // upper_bound[10] = 0.4;
+        // upper_bound[11] = 1;
+
+        // Actuation limits
+        // A_u(0, 0) = 0;
+        // A_u(1, 1) = 0;
+        // A_u(2, 2) = 1;
+        A_u(3, 3) = 1;
+        A_u(4, 4) = 1;
+
+        lower_bound_u << 0, 0, 0, -5, -5;
+        upper_bound_u << 0, 0, 0, 5, 5; // plate + block is ~5.5 N 
       }
-
       
-
-      Eigen::VectorXd lower_bound(Eigen::VectorXd::Zero(n_x_));
-      Eigen::VectorXd upper_bound(Eigen::VectorXd::Zero(n_x_));
-
-      // Joint limits
-      lower_bound[0] = -165 * M_PI;
-      lower_bound[1] = -105 * M_PI;
-      lower_bound[2] = -165 * M_PI; 
-      lower_bound[3] = -176 * M_PI;
-      lower_bound[4] = -165 * M_PI;
-      lower_bound[5] = 25 * M_PI;
-      lower_bound[6] = -175 * M_PI;
-
-      upper_bound[0] = 165 * M_PI / 180;
-      upper_bound[1] = 105 * M_PI / 180;
-      upper_bound[2] = 165 * M_PI / 180;
-      upper_bound[3] = -7 * M_PI / 180;
-      upper_bound[4] = 165 * M_PI / 180;
-      upper_bound[5] = 265 * M_PI / 180;
-      upper_bound[6] = 175 * M_PI / 180;
-
-      // Joint velocity limits
-      lower_bound[14] = -150 * M_PI / 180;
-      lower_bound[15] = -150 * M_PI / 180;
-      lower_bound[16] = -150 * M_PI / 180; 
-      lower_bound[17] = -150 * M_PI / 180;
-      lower_bound[18] = -301 * M_PI / 180;
-      lower_bound[19] = -301 * M_PI / 180;
-      lower_bound[20] = -301 * M_PI / 180;
-
-      upper_bound[14] = 150 * M_PI / 180;
-      upper_bound[15] = 150 * M_PI / 180;
-      upper_bound[16] = 150 * M_PI / 180;
-      upper_bound[17] = 150 * M_PI / 180;
-      upper_bound[18] = 301 * M_PI / 180;
-      upper_bound[19] = 301 * M_PI / 180;
-      upper_bound[20] = 301 * M_PI / 180;
-      
-
-      Eigen::MatrixXd A_u = Eigen::MatrixXd::Zero(n_u_, n_u_);
-      // A_u(0, 0) = 0;
-      // A_u(1, 1) = 0;
-      // A_u(2, 2) = 1;
-      // A_u(3, 3) = 1;
-      // A_u(4, 4) = 1;
-
-      Eigen::VectorXd lower_bound_u(Eigen::VectorXd::Zero(n_u_));
-      Eigen::VectorXd upper_bound_u(Eigen::VectorXd::Zero(n_u_));
-
-      */
 
       vector<Eigen::VectorXd> x_sol;
       vector<Eigen::VectorXd> u_sol;
@@ -312,7 +308,6 @@ iC3::iC3(
           c3_->AddLinearConstraint(A_u, lower_bound_u, upper_bound_u,
                                     ConstraintVariable::INPUT);
         }
-
                      
         c3_->Solve(x_start);
 
@@ -353,13 +348,18 @@ iC3::iC3(
       lcs = output.first;
       x_hat = output.second;
 
-      x_real = RolloutUHat(x0, u_hat);
+      if (is_franka_) {
+        x_real = RolloutUHatFranka(x0, u_hat);
+      } else {
+        x_real = RolloutUHat(x0, u_hat);
+      }
+
       // normalize xhat quaternions
-      // for (int i = 0; i < x_hat.cols(); i++) {
-      //   for (int index : controller_options_.quaternion_indices) {
-      //     x_hat.col(i).segment(index, 4).normalize();
-      //   }
-      // }
+      for (int i = 0; i < x_hat.cols(); i++) {
+        for (int index : controller_options_.quaternion_indices) {
+          x_hat.col(i).segment(index, 4).normalize();
+        }
+      }
 
       all_x_hats.push_back(x_hat);
       all_u_hats.push_back(u_hat);
@@ -619,7 +619,7 @@ iC3::iC3(
    MatrixXd iC3::RolloutUHat(VectorXd x0, MatrixXd u_hat) {
     DiagramBuilder<double> builder;
     auto [plant_sim, scene_graph] =
-        drake::multibody::AddMultibodyPlantSceneGraph(&builder, 0);
+        drake::multibody::AddMultibodyPlantSceneGraph(&builder, 0.00001);
     Parser parser(&plant_sim, &scene_graph);
     
     const std::string plate_file_lcs = "examples/resources/plate/plate.sdf";	
@@ -661,7 +661,7 @@ iC3::iC3(
   MatrixXd iC3::RolloutUHatFranka(VectorXd x0, MatrixXd u_hat) {
     DiagramBuilder<double> builder;
     auto [plant_sim, scene_graph] =
-        drake::multibody::AddMultibodyPlantSceneGraph(&builder, 0);
+        drake::multibody::AddMultibodyPlantSceneGraph(&builder, 0.0001);
     Parser parser(&plant_sim, &scene_graph);
 
     
